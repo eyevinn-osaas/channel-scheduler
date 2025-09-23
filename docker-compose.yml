@@ -6,10 +6,11 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - channel_data:/app/data
+      - channel_data:/data
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/prod.db
+      - DATA_DIR=/data
+      - DATABASE_URL=file:/data/prod.db
       - PORT=3000
       # Uncomment and set OSC_HOSTNAME to automatically set PUBLIC_URL
       # - OSC_HOSTNAME=your-hostname.example.com

@@ -19,18 +19,22 @@ COPY . .
 # Generate Prisma client
 RUN npx prisma generate
 
-# Create data directory for SQLite database
-RUN mkdir -p /app/data
+# Create default data directory
+RUN mkdir -p /data
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV DATABASE_URL="file:/app/data/prod.db"
+ENV DATA_DIR="/data"
+ENV DATABASE_URL="file:/data/prod.db"
 ENV PORT=3000
+
+# Create volume for data persistence
+VOLUME ["/data"]
 
 # Expose port
 EXPOSE 3000
 
-# Create startup script that handles OSC_HOSTNAME
+# Create startup script that handles OSC_HOSTNAME and DATA_DIR
 RUN echo '#!/bin/bash\n\
 # Set PUBLIC_URL from OSC_HOSTNAME if defined\n\
 if [ ! -z "$OSC_HOSTNAME" ]; then\n\
@@ -38,8 +42,17 @@ if [ ! -z "$OSC_HOSTNAME" ]; then\n\
   echo "Setting PUBLIC_URL to: $PUBLIC_URL"\n\
 fi\n\
 \n\
+# Set DATA_DIR (defaults to /data if not set)\n\
+DATA_DIR=${DATA_DIR:-/data}\n\
+export DATABASE_URL="file:${DATA_DIR}/prod.db"\n\
+echo "Using data directory: $DATA_DIR"\n\
+echo "Database URL: $DATABASE_URL"\n\
+\n\
+# Create data directory if it doesn'\''t exist\n\
+mkdir -p "$DATA_DIR"\n\
+\n\
 # Initialize database if it doesn'\''t exist\n\
-if [ ! -f /app/data/prod.db ]; then\n\
+if [ ! -f "${DATA_DIR}/prod.db" ]; then\n\
   echo "Initializing database..."\n\
   npx prisma db push\n\
 fi\n\
