@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Channel {
+  id                    String     @id @default(cuid())
+  name                  String
+  description           String?
+  webhookUrl            String?    @map("webhook_url")
+  scheduleStart         DateTime?  @map("schedule_start")
+  autoSchedule          Boolean    @default(true) @map("auto_schedule")
+  channelEngineInstance String?    @map("channel_engine_instance")
+  channelEngineUrl      String?    @map("channel_engine_url")
+  isOnAir               Boolean    @default(false) @map("is_on_air")
+  lastStatusCheck       DateTime?  @map("last_status_check")
+  lastWebhookCall       DateTime?  @map("last_webhook_call")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
+  schedules             Schedule[]
+
+  @@map("channels")
+}
+
+model VOD {
+  id                  String     @id @default(cuid())
+  title               String
+  description         String?
+  hlsUrl              String     @map("hls_url")
+  durationMs          Int        @map("duration_ms")
+  prerollUrl          String?    @map("preroll_url")
+  prerollDurationMs   Int?       @map("preroll_duration_ms")
+  metadata            String?    // JSON string
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+  schedules           Schedule[]
+
+  @@map("vods")
+}
+
+model Schedule {
+  id             String    @id @default(cuid())
+  channelId      String    @map("channel_id")
+  vodId          String    @map("vod_id")
+  scheduledStart DateTime  @map("scheduled_start")
+  scheduledEnd   DateTime  @map("scheduled_end")
+  position       Int
+  repeatPattern  String?   @map("repeat_pattern")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  
+  channel        Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  vod            VOD       @relation(fields: [vodId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, scheduledStart])
+  @@index([channelId, position])
+  @@map("schedules")
+}

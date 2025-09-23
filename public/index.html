@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Channel Scheduler</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div id="app">
+        <nav class="bg-blue-600 text-white p-4 shadow-lg">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">
+                    <i class="fas fa-tv mr-2"></i>
+                    Channel Scheduler
+                </h1>
+                <div class="flex items-center space-x-4">
+                    <!-- Webhook URL Display -->
+                    <div class="hidden lg:flex items-center space-x-2 px-3 py-2 bg-blue-500 rounded">
+                        <i class="fas fa-link text-white"></i>
+                        <span class="text-xs text-blue-100">Webhook:</span>
+                        <input type="text" id="global-webhook-url" readonly 
+                               class="bg-blue-600 text-white text-xs px-2 py-1 rounded border-0 w-64 cursor-pointer"
+                               placeholder="Loading..." title="Click to copy">
+                        <button id="copy-global-webhook" class="text-white hover:text-blue-200" title="Copy webhook URL">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Tab Buttons -->
+                    <div class="space-x-2">
+                        <button id="channels-tab" class="px-4 py-2 rounded bg-blue-500 hover:bg-blue-400">
+                            <i class="fas fa-list mr-1"></i>Channels
+                        </button>
+                        <button id="vods-tab" class="px-4 py-2 rounded bg-blue-700 hover:bg-blue-400">
+                            <i class="fas fa-video mr-1"></i>VODs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container mx-auto p-6">
+            <!-- Channels View -->
+            <div id="channels-view" class="view">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">TV Channels</h2>
+                    <button id="add-channel-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
+                        <i class="fas fa-plus mr-2"></i>Add Channel
+                    </button>
+                </div>
+                <div id="channels-list" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    <!-- Channels will be loaded here -->
+                </div>
+            </div>
+
+            <!-- VODs View -->
+            <div id="vods-view" class="view hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">Video on Demand Library</h2>
+                    <button id="add-vod-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
+                        <i class="fas fa-plus mr-2"></i>Add VOD
+                    </button>
+                </div>
+                <div id="vods-list" class="space-y-4">
+                    <!-- VODs will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Schedule View (for a specific channel) -->
+            <div id="schedule-view" class="view hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <button id="back-to-channels" class="text-blue-600 hover:text-blue-800 mb-2">
+                            <i class="fas fa-arrow-left mr-1"></i>Back to Channels
+                        </button>
+                        <h2 id="schedule-title" class="text-3xl font-bold text-gray-800"></h2>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="set-schedule-start-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-clock mr-1"></i>Set Start Time
+                        </button>
+                        <button id="rebalance-schedule-btn" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-align-left mr-1"></i>Rebalance
+                        </button>
+                        <button id="add-schedule-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-plus mr-1"></i>Add VOD
+                        </button>
+                    </div>
+                </div>
+                <div id="schedule-list" class="space-y-4">
+                    <!-- Schedule items will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Channel Modal -->
+    <div id="channel-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+                <h3 id="channel-modal-title" class="text-lg font-bold mb-4">Add Channel</h3>
+                <form id="channel-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Channel Name</label>
+                        <input type="text" id="channel-name" class="w-full border rounded-lg px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Description</label>
+                        <textarea id="channel-description" class="w-full border rounded-lg px-3 py-2" rows="3"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Webhook URL</label>
+                        <input type="url" id="channel-webhook" class="w-full border rounded-lg px-3 py-2" 
+                               placeholder="https://your-channel-engine-instance.com/webhook/nextVod">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Schedule Start Time</label>
+                        <input type="datetime-local" id="channel-schedule-start" class="w-full border rounded-lg px-3 py-2">
+                        <p class="text-xs text-gray-500 mt-1">When should this channel's schedule begin?</p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="channel-auto-schedule" class="mr-2" checked>
+                            <span class="text-sm font-medium">Enable automatic back-to-back scheduling</span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1">VODs will be scheduled consecutively without gaps</p>
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                        <button type="button" id="cancel-channel" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                            Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- VOD Modal -->
+    <div id="vod-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4 max-h-90vh overflow-y-auto">
+                <h3 id="vod-modal-title" class="text-lg font-bold mb-4">Add VOD</h3>
+                <form id="vod-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Title</label>
+                        <input type="text" id="vod-title" class="w-full border rounded-lg px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Description</label>
+                        <textarea id="vod-description" class="w-full border rounded-lg px-3 py-2" rows="3"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">HLS URL</label>
+                        <div class="flex space-x-2">
+                            <input type="url" id="vod-hls-url" class="flex-1 border rounded-lg px-3 py-2" required>
+                            <button type="button" id="detect-duration-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                                <i class="fas fa-magic mr-1"></i>Detect
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Duration will be automatically detected from HLS manifest</p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Duration</label>
+                        <div class="flex space-x-2">
+                            <input type="number" id="vod-duration" class="flex-1 border rounded-lg px-3 py-2" placeholder="Auto-detected" readonly>
+                            <span class="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600">ms</span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1" id="duration-display"></p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Preroll URL (optional)</label>
+                        <input type="url" id="vod-preroll-url" class="w-full border rounded-lg px-3 py-2">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Preroll Duration (ms)</label>
+                        <input type="number" id="vod-preroll-duration" class="w-full border rounded-lg px-3 py-2">
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                        <button type="button" id="cancel-vod" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                            Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schedule Modal -->
+    <div id="schedule-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+                <h3 id="schedule-modal-title" class="text-lg font-bold mb-4">Add to Schedule</h3>
+                <form id="schedule-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Select VOD</label>
+                        <select id="schedule-vod" class="w-full border rounded-lg px-3 py-2" required>
+                            <option value="">Choose a VOD...</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="schedule-back-to-back" class="mr-2" checked>
+                            <span class="text-sm font-medium">Add back-to-back (automatic timing)</span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1">Schedule will start after the last item, or at channel start time</p>
+                    </div>
+                    <div id="manual-schedule-fields" class="hidden">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2">Scheduled Start</label>
+                            <input type="datetime-local" id="schedule-start" class="w-full border rounded-lg px-3 py-2">
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2">Scheduled End</label>
+                            <input type="datetime-local" id="schedule-end" class="w-full border rounded-lg px-3 py-2">
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                        <button type="button" id="cancel-schedule" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                            Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Set Start Time Modal -->
+    <div id="set-start-time-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+                <h3 class="text-lg font-bold mb-4">Set Schedule Start Time</h3>
+                <form id="set-start-time-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Start Time</label>
+                        <input type="datetime-local" id="schedule-start-time" class="w-full border rounded-lg px-3 py-2" required>
+                        <p class="text-xs text-gray-500 mt-1">When should this channel's schedule begin?</p>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <button type="button" id="set-now-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                            <i class="fas fa-clock mr-1"></i>Now
+                        </button>
+                        <div class="flex space-x-2">
+                            <button type="button" id="cancel-set-start-time" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
+                                Cancel
+                            </button>
+                            <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                                Set Time
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
