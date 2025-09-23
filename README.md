@@ -16,7 +16,6 @@ A web-based interface for scheduling and managing video content for [Eyevinn Cha
 ## Prerequisites
 
 - Node.js 16+ and npm
-- PostgreSQL database
 - [Eyevinn Channel Engine](https://www.osaas.io/services/channel-engine) instance(s)
 
 ## Setup
@@ -32,7 +31,7 @@ npm install
 ### 2. Database Setup
 
 ```bash
-# Set up your PostgreSQL database
+# Set up the SQLite database
 npx prisma migrate dev
 ```
 
@@ -41,9 +40,9 @@ npx prisma migrate dev
 Create a `.env` file:
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/channel_scheduler"
 PORT=3000
 PUBLIC_URL="http://localhost:3000"
+DATA_DIR="./data"
 ```
 
 For webhook functionality, you'll need a publicly accessible URL. Use ngrok for development:
@@ -269,9 +268,9 @@ npm install
 npx prisma migrate deploy
 
 # Set environment variables
-export DATABASE_URL="postgresql://user:pass@localhost/channel_scheduler"
 export PUBLIC_URL="https://your-domain.com"
 export PORT=3000
+export DATA_DIR="/app/data"
 
 # Start with process manager
 pm2 start index.js --name channel-scheduler
