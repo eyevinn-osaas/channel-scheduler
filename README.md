@@ -69,7 +69,7 @@ The application will be available at `http://localhost:3000`
 
 ### Creating a Channel Engine Instance
 
-1. Go to [OSC (Open Source Cloud)](https://www.osaas.io/)
+1. Go to [OSC Channel Engine](https://app.osaas.io/browse/channel-engine)
 2. Create a new **Channel Engine** instance
 3. **CRITICAL**: The instance name must exactly match your channel name in the scheduler
 
