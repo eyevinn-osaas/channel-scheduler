@@ -45,7 +45,12 @@ fastify.get('/api/channels', async (request, reply) => {
 
 fastify.post('/api/channels', async (request, reply) => {
   try {
-    const { name, description, webhookUrl, scheduleStart, autoSchedule } = request.body;
+    const { name, description, scheduleStart, autoSchedule } = request.body;
+    
+    // Automatically generate webhook URL
+    const publicUrl = getPublicUrl();
+    const webhookUrl = `${publicUrl}/webhook/nextVod`;
+    
     const channel = await prisma.channel.create({
       data: { 
         name, 
@@ -78,7 +83,12 @@ fastify.get('/api/channels/:id', async (request, reply) => {
 
 fastify.put('/api/channels/:id', async (request, reply) => {
   try {
-    const { name, description, webhookUrl, scheduleStart, autoSchedule } = request.body;
+    const { name, description, scheduleStart, autoSchedule } = request.body;
+    
+    // Automatically generate webhook URL (in case PUBLIC_URL changed)
+    const publicUrl = getPublicUrl();
+    const webhookUrl = `${publicUrl}/webhook/nextVod`;
+    
     const channel = await prisma.channel.update({
       where: { id: request.params.id },
       data: { 

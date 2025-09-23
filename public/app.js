@@ -432,7 +432,6 @@ class ChannelScheduler {
             
             document.getElementById('channel-name').value = channel.name;
             document.getElementById('channel-description').value = channel.description || '';
-            document.getElementById('channel-webhook').value = channel.webhookUrl || '';
             document.getElementById('channel-auto-schedule').checked = channel.autoSchedule !== false;
             
             if (channel.scheduleStart) {
@@ -451,7 +450,6 @@ class ChannelScheduler {
         const formData = {
             name: document.getElementById('channel-name').value,
             description: document.getElementById('channel-description').value,
-            webhookUrl: document.getElementById('channel-webhook').value,
             scheduleStart: document.getElementById('channel-schedule-start').value || null,
             autoSchedule: document.getElementById('channel-auto-schedule').checked
         };
