@@ -16,7 +16,7 @@ A web-based interface for scheduling and managing video content for [Eyevinn Cha
 ## Prerequisites
 
 - Node.js 16+ and npm
-- [Eyevinn Channel Engine](https://www.osaas.io/services/channel-engine) instance(s)
+- [Eyevinn Channel Engine](https://app.osaas.io/browse/channel-engine) instance(s)
 
 ## Setup
 
