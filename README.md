@@ -204,6 +204,77 @@ npx prisma migrate reset
 npx prisma migrate dev
 ```
 
+## Deployment
+
+### Docker Deployment (Recommended)
+
+The easiest way to deploy Channel Scheduler is using Docker:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd channel-scheduler
+
+# Build and run with docker-compose
+docker-compose up -d
+```
+
+The application will be available at `http://localhost:3000`. Data is persisted in a Docker volume.
+
+#### OSC Integration
+
+When deploying as a service in OSC (Open Source Cloud), the container automatically configures itself:
+
+1. Set the `OSC_HOSTNAME` environment variable to automatically configure webhook URLs
+2. The container will set `PUBLIC_URL=https://${OSC_HOSTNAME}` automatically
+3. SQLite database is stored in a persistent volume at `/app/data`
+
+**Docker Environment Variables:**
+
+```yaml
+environment:
+  - OSC_HOSTNAME=your-instance.osaas.io  # Auto-sets PUBLIC_URL
+  # OR set PUBLIC_URL directly:
+  # - PUBLIC_URL=https://your-domain.com
+```
+
+#### Custom Docker Deployment
+
+```bash
+# Build the image
+docker build -t channel-scheduler .
+
+# Run with volume for database persistence
+docker run -d \
+  --name channel-scheduler \
+  -p 3000:3000 \
+  -v channel_data:/app/data \
+  -e OSC_HOSTNAME=your-hostname.example.com \
+  channel-scheduler
+```
+
+### Manual Deployment
+
+For traditional hosting without Docker:
+
+```bash
+# Clone and install
+git clone <repository-url>
+cd channel-scheduler
+npm install
+
+# Set up database
+npx prisma migrate deploy
+
+# Set environment variables
+export DATABASE_URL="postgresql://user:pass@localhost/channel_scheduler"
+export PUBLIC_URL="https://your-domain.com"
+export PORT=3000
+
+# Start with process manager
+pm2 start index.js --name channel-scheduler
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

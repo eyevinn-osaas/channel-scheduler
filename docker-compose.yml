@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  channel-scheduler:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - channel_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/prod.db
+      - PORT=3000
+      # Uncomment and set OSC_HOSTNAME to automatically set PUBLIC_URL
+      # - OSC_HOSTNAME=your-hostname.example.com
+      # Or set PUBLIC_URL directly
+      # - PUBLIC_URL=https://your-domain.com
+    restart: unless-stopped
+
+volumes:
+  channel_data:
+    driver: local
