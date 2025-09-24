@@ -104,12 +104,34 @@ function registerWebhookRoutes(fastify) {
       const actualChannelId = channel.id;
 
       console.log(`Requesting next VOD for channel ${channelId} (actual ID: ${actualChannelId})`);
-      
-      // Update the channel's last webhook call time to track "online" status
-      await prisma.channel.update({
-        where: { id: actualChannelId },
-        data: { lastWebhookCall: new Date() }
-      });
+
+      const now = new Date();
+
+      // Check if this is the first time the engine is fetching content and sync schedule
+      if (!channel.scheduleSynced && channel.scheduleStart) {
+        console.log(`First VOD fetch detected for channel ${channelId}, syncing schedule start time`);
+
+        // Update the schedule start time to current time and sync all schedules
+        const { updateChannelScheduleStart } = require('./schedulingUtils');
+        await updateChannelScheduleStart(actualChannelId, now, false);
+
+        // Mark the channel as synced
+        await prisma.channel.update({
+          where: { id: actualChannelId },
+          data: {
+            lastWebhookCall: now,
+            scheduleSynced: true
+          }
+        });
+
+        console.log(`Schedule synced for channel ${channelId} - adjusted start time from ${channel.scheduleStart} to ${now}`);
+      } else {
+        // Update the channel's last webhook call time to track "online" status
+        await prisma.channel.update({
+          where: { id: actualChannelId },
+          data: { lastWebhookCall: now }
+        });
+      }
       
       const vodResponse = await getNextVod(actualChannelId);
       return vodResponse;
