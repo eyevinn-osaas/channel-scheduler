@@ -36,8 +36,13 @@ class ChannelScheduler {
         // Modal events
         document.getElementById('add-channel-btn').addEventListener('click', () => this.showChannelModal());
         document.getElementById('add-vod-btn').addEventListener('click', () => this.showVODModal());
-        document.getElementById('add-schedule-btn').addEventListener('click', () => this.showScheduleModal());
         document.getElementById('refresh-engines-btn').addEventListener('click', () => this.loadChannelEngines());
+        
+        // Sidebar events
+        document.getElementById('toggle-vod-sidebar-btn').addEventListener('click', () => this.toggleVODSidebar());
+        document.getElementById('close-vod-sidebar').addEventListener('click', () => this.hideVODSidebar());
+        document.getElementById('sidebar-overlay').addEventListener('click', () => this.hideVODSidebar());
+        document.getElementById('vod-search').addEventListener('input', (e) => this.searchVODs(e.target.value));
         
         // Schedule management events
         document.getElementById('set-schedule-start-btn').addEventListener('click', () => this.showSetScheduleStartModal());
@@ -514,11 +519,177 @@ class ChannelScheduler {
         }
     }
 
+    // VOD Sidebar Management
+    toggleVODSidebar() {
+        const sidebar = document.getElementById('vod-sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        
+        if (sidebar.classList.contains('hidden')) {
+            this.showVODSidebar();
+        } else {
+            this.hideVODSidebar();
+        }
+    }
+
+    async showVODSidebar() {
+        const sidebar = document.getElementById('vod-sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggleBtn = document.getElementById('toggle-vod-sidebar-btn');
+        
+        // Load VODs for sidebar if not already loaded
+        await this.loadVODsForSidebar();
+        
+        // Show sidebar and overlay
+        sidebar.classList.remove('hidden');
+        overlay.classList.remove('hidden');
+        
+        // Animate sidebar in
+        setTimeout(() => {
+            sidebar.style.transform = 'translateX(0)';
+        }, 10);
+        
+        // Update button text
+        toggleBtn.innerHTML = '<i class="fas fa-times mr-1"></i>Close VODs';
+        toggleBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        toggleBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+    }
+
+    hideVODSidebar() {
+        const sidebar = document.getElementById('vod-sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggleBtn = document.getElementById('toggle-vod-sidebar-btn');
+        
+        // Animate sidebar out
+        sidebar.style.transform = 'translateX(100%)';
+        
+        // Hide overlay and sidebar after animation
+        setTimeout(() => {
+            sidebar.classList.add('hidden');
+            overlay.classList.add('hidden');
+        }, 300);
+        
+        // Reset button text
+        toggleBtn.innerHTML = '<i class="fas fa-plus mr-1"></i>Add VODs';
+        toggleBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+        toggleBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+        
+        // Clear search
+        document.getElementById('vod-search').value = '';
+    }
+
+    async loadVODsForSidebar() {
+        try {
+            const response = await fetch('/api/vods');
+            const vods = await response.json();
+            this.allVODs = vods; // Store for search functionality
+            this.renderSidebarVODs(vods);
+        } catch (error) {
+            console.error('Error loading VODs for sidebar:', error);
+        }
+    }
+
+    renderSidebarVODs(vods) {
+        const container = document.getElementById('sidebar-vods-list');
+        
+        if (vods.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-video text-4xl text-gray-300 mb-2"></i>
+                    <p class="text-gray-500">No VODs found</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = vods.map(vod => `
+            <div class="bg-gray-50 rounded-lg p-3 hover:bg-blue-50 cursor-pointer transition-colors border border-gray-200 hover:border-blue-300" 
+                 onclick="app.addVODToSchedule('${vod.id}')">
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0 w-12 h-8 bg-gray-800 rounded flex items-center justify-center">
+                        <i class="fas fa-play text-white text-xs"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="text-sm font-medium text-gray-900 truncate">${vod.title}</h4>
+                        <p class="text-xs text-gray-500 mt-1">${this.formatDuration(vod.durationMs)}</p>
+                        ${vod.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${vod.description}</p>` : ''}
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-plus text-green-500 hover:text-green-600"></i>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    searchVODs(query) {
+        if (!this.allVODs) return;
+        
+        const filteredVODs = this.allVODs.filter(vod => 
+            vod.title.toLowerCase().includes(query.toLowerCase()) ||
+            (vod.description && vod.description.toLowerCase().includes(query.toLowerCase()))
+        );
+        
+        this.renderSidebarVODs(filteredVODs);
+    }
+
+    async addVODToSchedule(vodId) {
+        try {
+            if (!this.currentChannelId) {
+                alert('No channel selected');
+                return;
+            }
+
+            // Use back-to-back scheduling by default
+            const response = await fetch(`/api/channels/${this.currentChannelId}/schedule`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    vodId: vodId,
+                    useBackToBack: true
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to add VOD to schedule');
+            }
+
+            // Reload the schedule to show the new item
+            await this.loadSchedule(this.currentChannelId);
+            
+            // Show success feedback
+            this.showTemporaryMessage('VOD added to schedule successfully!', 'success');
+            
+        } catch (error) {
+            console.error('Error adding VOD to schedule:', error);
+            this.showTemporaryMessage('Failed to add VOD to schedule', 'error');
+        }
+    }
+
+    showTemporaryMessage(message, type = 'info') {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            type === 'success' ? 'bg-green-500 text-white' : 
+            type === 'error' ? 'bg-red-500 text-white' : 
+            'bg-blue-500 text-white'
+        }`;
+        messageDiv.textContent = message;
+        
+        document.body.appendChild(messageDiv);
+        
+        setTimeout(() => {
+            messageDiv.remove();
+        }, 3000);
+    }
+
     async viewSchedule(channelId, channelName) {
         this.currentChannelId = channelId;
         document.getElementById('schedule-title').textContent = `${channelName} - Schedule`;
         this.showView('schedule');
         await this.loadSchedule(channelId);
+        // Hide sidebar when switching to schedule view
+        this.hideVODSidebar();
     }
 
     async loadSchedule(channelId) {
