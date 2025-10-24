@@ -25,6 +25,10 @@ class ChannelScheduler {
             this.showView('vods');
             this.loadVODs();
         });
+        document.getElementById('channel-engines-tab').addEventListener('click', () => {
+            this.showView('channel-engines');
+            this.loadChannelEngines();
+        });
         document.getElementById('back-to-channels').addEventListener('click', () => {
             this.showView('channels');
         });
@@ -33,6 +37,7 @@ class ChannelScheduler {
         document.getElementById('add-channel-btn').addEventListener('click', () => this.showChannelModal());
         document.getElementById('add-vod-btn').addEventListener('click', () => this.showVODModal());
         document.getElementById('add-schedule-btn').addEventListener('click', () => this.showScheduleModal());
+        document.getElementById('refresh-engines-btn').addEventListener('click', () => this.loadChannelEngines());
         
         // Schedule management events
         document.getElementById('set-schedule-start-btn').addEventListener('click', () => this.showSetScheduleStartModal());
@@ -264,6 +269,249 @@ class ChannelScheduler {
                 </div>
             </div>
         `).join('');
+    }
+
+    async loadChannelEngines() {
+        try {
+            const container = document.getElementById('channel-engines-list');
+            container.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-500"></i><p class="mt-2 text-gray-600">Loading Channel Engine instances...</p></div>';
+            
+            const response = await fetch('/api/channel-engines');
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to load Channel Engine instances');
+            }
+            const engines = await response.json();
+            this.renderChannelEngines(engines);
+        } catch (error) {
+            console.error('Error loading Channel Engines:', error);
+            const container = document.getElementById('channel-engines-list');
+            if (error.message.includes('OSC not configured')) {
+                container.innerHTML = `
+                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-yellow-700">
+                                    <strong>OSC not configured:</strong> Please set the OSC_ACCESS_TOKEN environment variable to list Channel Engine instances.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="bg-red-50 border-l-4 border-red-400 p-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-circle text-red-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-red-700">
+                                    <strong>Error:</strong> ${error.message}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    renderChannelEngines(engines) {
+        const container = document.getElementById('channel-engines-list');
+        
+        if (engines.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-12">
+                    <i class="fas fa-server text-6xl text-gray-300 mb-4"></i>
+                    <h3 class="text-xl font-medium text-gray-500 mb-2">No Channel Engine instances found</h3>
+                    <p class="text-gray-400">Create Channel Engine instances from the Channels view</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = engines.map(engine => `
+            <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow ${engine.isConnected ? 'ring-2 ring-green-200' : ''}">
+                <div class="flex gap-6">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-3 mb-3">
+                            <h3 class="text-xl font-semibold text-gray-800">${engine.name}</h3>
+                            ${engine.isConnected ? `
+                                <div class="status-badge bg-green-100 text-green-800">
+                                    <i class="fas fa-plug mr-1"></i>
+                                    Connected
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="space-y-2 text-sm text-gray-600">
+                            <div><i class="fas fa-cog mr-2"></i><strong>Type:</strong> ${engine.type}</div>
+                            ${engine.url ? `<div><i class="fas fa-link mr-2"></i><strong>Stream URL:</strong> <a href="${engine.url}" target="_blank" class="text-blue-500 hover:text-blue-700">${engine.url}</a></div>` : ''}
+                            ${engine.webhookUrl ? `<div><i class="fas fa-webhook mr-2"></i><strong>Webhook URL:</strong> <span class="text-xs font-mono ${engine.isConnected ? 'text-green-600' : 'text-gray-500'}">${engine.webhookUrl}</span></div>` : ''}
+                            ${engine.created ? `<div><i class="fas fa-calendar mr-2"></i><strong>Created:</strong> ${new Date(engine.created).toLocaleString()}</div>` : ''}
+                            ${engine.lastModified ? `<div><i class="fas fa-clock mr-2"></i><strong>Last Modified:</strong> ${new Date(engine.lastModified).toLocaleString()}</div>` : ''}
+                        </div>
+                        ${engine.isConnected ? `
+                            <div class="mt-3 p-2 bg-green-50 rounded border-l-4 border-green-400">
+                                <p class="text-sm text-green-700">
+                                    <i class="fas fa-check-circle mr-1"></i>
+                                    This Channel Engine is connected to this scheduler application
+                                </p>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${engine.url ? `
+                        <div class="flex-shrink-0 w-80">
+                            <div class="relative bg-black rounded-lg overflow-hidden">
+                                <video 
+                                    id="player-${engine.name}" 
+                                    class="w-full h-44 object-contain cursor-pointer"
+                                    controls
+                                    preload="none"
+                                    poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 225'%3E%3Crect width='400' height='225' fill='%23000'/%3E%3Cg fill='%23fff' opacity='0.7'%3E%3Ccircle cx='200' cy='112.5' r='30'/%3E%3Cpolygon points='190,97.5 190,127.5 215,112.5'/%3E%3C/g%3E%3Ctext x='200' y='180' text-anchor='middle' fill='%23fff' font-family='Arial' font-size='14' opacity='0.7'%3EClick to play stream%3C/text%3E%3C/svg%3E"
+                                    onclick="app.playStream('${engine.name}', '${engine.url}')"
+                                >
+                                    <source src="${engine.url}" type="application/x-mpegURL">
+                                    Your browser does not support HLS video playback.
+                                </video>
+                                <div class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 pointer-events-none" id="overlay-${engine.name}" data-url="${engine.url}">
+                                    <div class="text-white text-center">
+                                        <i class="fas fa-play-circle text-3xl mb-1"></i>
+                                        <p class="text-xs">Click to play</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    getEngineStatusClass(status) {
+        switch (status?.toLowerCase()) {
+            case 'running':
+                return 'bg-green-100 text-green-800';
+            case 'stopped':
+                return 'bg-red-100 text-red-800';
+            case 'starting':
+                return 'bg-yellow-100 text-yellow-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    }
+
+    getEngineStatusIcon(status) {
+        switch (status?.toLowerCase()) {
+            case 'running':
+                return 'fa-play';
+            case 'stopped':
+                return 'fa-stop';
+            case 'starting':
+                return 'fa-spinner fa-spin';
+            default:
+                return 'fa-question';
+        }
+    }
+
+    playStream(engineName, streamUrl) {
+        const player = document.getElementById(`player-${engineName}`);
+        const overlay = document.getElementById(`overlay-${engineName}`);
+        
+        if (player) {
+            // Hide the overlay
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+            
+            // Check if HLS.js is available and supported
+            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                // Use HLS.js for browsers without native HLS support (Chrome, Firefox, Edge, etc.)
+                const hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: false,
+                    backBufferLength: 90
+                });
+                
+                hls.loadSource(streamUrl);
+                hls.attachMedia(player);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    console.log(`HLS manifest loaded for ${engineName}`);
+                    player.play().catch(error => {
+                        console.error('Error playing stream:', error);
+                        this.showStreamError(engineName, 'Failed to start playback');
+                    });
+                });
+                
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('HLS error:', data);
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                this.showStreamError(engineName, 'Network error loading stream');
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                this.showStreamError(engineName, 'Media error during playback');
+                                break;
+                            default:
+                                this.showStreamError(engineName, `Stream error: ${data.details}`);
+                                break;
+                        }
+                    }
+                });
+
+                // Store HLS instance for cleanup if needed
+                player._hlsInstance = hls;
+                
+            } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari, iOS)
+                console.log(`Using native HLS support for ${engineName}`);
+                player.src = streamUrl;
+                player.play().catch(error => {
+                    console.error('Error playing stream:', error);
+                    this.showStreamError(engineName, 'Failed to start playback');
+                });
+            } else {
+                // This should rarely happen since HLS.js covers most modern browsers
+                console.error('No HLS support available');
+                this.showStreamError(engineName, 'HLS playback not supported in this browser');
+            }
+
+            // Add event listeners for better UX
+            player.addEventListener('loadstart', () => {
+                console.log(`Loading stream for ${engineName}`);
+            });
+
+            player.addEventListener('canplay', () => {
+                console.log(`Stream ready for ${engineName}`);
+            });
+
+            player.addEventListener('error', (e) => {
+                console.error(`Stream error for ${engineName}:`, e);
+                this.showStreamError(engineName, 'Stream playback failed');
+            });
+        }
+    }
+
+    showStreamError(engineName, message) {
+        const overlay = document.getElementById(`overlay-${engineName}`);
+        if (overlay) {
+            const streamUrl = overlay.getAttribute('data-url');
+            overlay.innerHTML = `
+                <div class="text-white text-center">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-2 text-red-400"></i>
+                    <p class="text-sm">${message}</p>
+                    <button class="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 pointer-events-auto" onclick="app.playStream('${engineName}', '${streamUrl}')">
+                        Retry
+                    </button>
+                </div>
+            `;
+            overlay.style.display = 'flex';
+        }
     }
 
     async viewSchedule(channelId, channelName) {

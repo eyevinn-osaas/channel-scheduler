@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Context, createInstance } = require('@osaas/client-core');
+const { Context, createInstance, listInstances } = require('@osaas/client-core');
 
 class OSCClient {
     constructor() {
@@ -78,6 +78,55 @@ class OSCClient {
             return { success: true, instanceName, simulated: true };
         } catch (error) {
             console.error('Failed to delete Channel Engine via OSC API:', error);
+            throw error;
+        }
+    }
+
+    async listChannelEngineInstances() {
+        if (!this.isConfigured()) {
+            throw new Error('OSC_ACCESS_TOKEN environment variable is not configured');
+        }
+
+        try {
+            console.log('Listing Channel Engine instances via OSC API...');
+
+            // Get service access token
+            const serviceAccessToken = await this.context.getServiceAccessToken('channel-engine');
+
+            // List all Channel Engine instances
+            const instances = await listInstances(this.context, 'channel-engine', serviceAccessToken);
+
+            console.log(`Found ${instances.length} Channel Engine instances`);
+
+            // Filter for WebHook type instances only
+            const webhookInstances = instances.filter(instance => 
+                (instance.type || 'WebHook') === 'WebHook'
+            );
+
+            console.log(`Filtered to ${webhookInstances.length} WebHook instances`);
+
+            // Get this application's webhook URL for comparison
+            const publicUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+            const appWebhookUrl = `${publicUrl.endsWith('/') ? publicUrl.slice(0, -1) : publicUrl}/webhook/nextVod`;
+
+            return webhookInstances.map(instance => {
+                // Check if this instance's webhook URL matches our application's webhook
+                const isConnected = instance.opts?.url && 
+                    instance.opts.url.startsWith(appWebhookUrl);
+
+                return {
+                    name: instance.name,
+                    status: instance.status,
+                    url: instance.url,
+                    created: instance.created,
+                    lastModified: instance.lastModified,
+                    type: instance.type || 'WebHook',
+                    webhookUrl: instance.opts?.webhook,
+                    isConnected: isConnected
+                };
+            });
+        } catch (error) {
+            console.error('Failed to list Channel Engine instances:', error);
             throw error;
         }
     }

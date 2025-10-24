@@ -30,8 +30,11 @@ async function getNextVod(channelId) {
       });
     }
 
-    // If still no item, get by position (for continuous playback)
+    // If still no item, we're looping back to the beginning
     if (!schedule) {
+      console.log(`No upcoming schedule items found for channel ${channelId}, looping back to beginning and updating schedule times`);
+      
+      // Get the first item by position
       schedule = await prisma.schedule.findFirst({
         where: {
           channelId,
@@ -40,6 +43,32 @@ async function getNextVod(channelId) {
         include: { vod: true },
         orderBy: { position: 'asc' }
       });
+
+      if (schedule) {
+        // Update the entire schedule to start from now
+        const { rebalanceSchedule } = require('./schedulingUtils');
+        
+        // Update the channel's schedule start to current time
+        await prisma.channel.update({
+          where: { id: channelId },
+          data: { scheduleStart: now }
+        });
+        
+        // Rebalance all schedule times starting from position 1
+        await rebalanceSchedule(channelId, 1);
+        
+        // Fetch the updated schedule item
+        schedule = await prisma.schedule.findFirst({
+          where: {
+            channelId,
+            isActive: true,
+            position: schedule.position
+          },
+          include: { vod: true }
+        });
+        
+        console.log(`Schedule updated for channel ${channelId} - restarted from position 1 at ${now}`);
+      }
     }
 
     if (!schedule) {

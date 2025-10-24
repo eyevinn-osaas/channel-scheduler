@@ -516,6 +516,24 @@ fastify.delete('/api/channels/:id/channel-engine', async (request, reply) => {
   }
 });
 
+// List all Channel Engine instances
+fastify.get('/api/channel-engines', async (request, reply) => {
+  try {
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ 
+        error: 'OSC not configured', 
+        message: 'OSC_ACCESS_TOKEN environment variable is not set' 
+      });
+    }
+
+    const instances = await oscClient.listChannelEngineInstances();
+    return instances;
+  } catch (error) {
+    console.error('Error listing Channel Engine instances:', error);
+    reply.code(500).send({ error: 'Failed to list Channel Engine instances' });
+  }
+});
+
 fastify.get('/api/channels/:id/status', async (request, reply) => {
   try {
     const { id } = request.params;
