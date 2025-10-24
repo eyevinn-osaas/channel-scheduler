@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Context, createInstance, listInstances } = require('@osaas/client-core');
+const { Context, createInstance, listInstances, removeInstance } = require('@osaas/client-core');
 
 class OSCClient {
     constructor() {
@@ -37,10 +37,7 @@ class OSCClient {
                 {
                     name: instanceName,
                     type: 'WebHook',
-                    url: webhookUrl,
-                    opts: {
-                        webhook: webhookUrl
-                    }
+                    url: webhookUrl
                 }
             );
 
@@ -69,13 +66,19 @@ class OSCClient {
         try {
             console.log(`Deleting Channel Engine instance: ${instanceName}`);
 
-            // For deletion, we would need the deleteInstance function from the SDK
-            // For now, use simulation mode as the delete API pattern isn't clear from docs
-            console.log('[OSC SIMULATION] Deleting Channel Engine instance:', instanceName);
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Get service access token
+            const serviceAccessToken = await this.context.getServiceAccessToken('channel-engine');
+
+            // Delete the Channel Engine instance using the OSC API
+            const result = await removeInstance(this.context, 'channel-engine', instanceName, serviceAccessToken);
 
             console.log(`Channel Engine instance deleted successfully: ${instanceName}`);
-            return { success: true, instanceName, simulated: true };
+            return { 
+                success: true, 
+                instanceName, 
+                result: result,
+                simulated: false 
+            };
         } catch (error) {
             console.error('Failed to delete Channel Engine via OSC API:', error);
             throw error;
@@ -151,32 +154,6 @@ class OSCClient {
         }
     }
 
-    // Simulate OSC API calls for development/testing
-    async simulateChannelEngineCreation(instanceName, webhookUrl) {
-        console.log(`[SIMULATION] Creating Channel Engine instance: ${instanceName}`);
-        console.log(`[SIMULATION] Webhook URL: ${webhookUrl}`);
-        
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const channelEngineUrl = `https://${instanceName}.ce.prod.osaas.io/channels/${instanceName}/master.m3u8`;
-        
-        return {
-            instanceName,
-            channelEngineUrl,
-            webhookUrl,
-            simulated: true
-        };
-    }
-
-    async simulateChannelEngineDeletion(instanceName) {
-        console.log(`[SIMULATION] Deleting Channel Engine instance: ${instanceName}`);
-        
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        return { success: true, instanceName, simulated: true };
-    }
 }
 
 module.exports = { OSCClient };

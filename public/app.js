@@ -141,18 +141,9 @@ class ChannelScheduler {
                 <p class="text-gray-600 mb-4">${channel.description || 'No description'}</p>
                 
                 <!-- Channel Engine Status -->
-                ${channel.channelEngineInstance ? `
-                    <div class="mb-4 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
-                        <div>
-                            <p class="text-sm font-medium text-blue-800">Channel Engine: ${channel.channelEngineInstance}</p>
-                            ${channel.channelEngineUrl ? `
-                                <a href="${channel.channelEngineUrl}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800">
-                                    <i class="fas fa-external-link-alt mr-1"></i>View Stream
-                                </a>
-                            ` : ''}
-                        </div>
-                    </div>
-                ` : ''}
+                <div id="engine-status-${channel.id}" class="mb-4">
+                    ${this.renderEngineStatus(channel)}
+                </div>
                 
                 
                 <div class="flex justify-between items-center">
@@ -175,13 +166,119 @@ class ChannelScheduler {
                 ` : ''}
             </div>
         `).join('');
-        
-        // Load status for each channel
+
+        // Load status for each channel and check for running engines
         channels.forEach(channel => {
             if (channel.channelEngineInstance) {
                 this.loadChannelStatus(channel.id);
+            } else {
+                // Check if there's a running engine with this channel's name
+                this.checkForRunningEngine(channel);
             }
         });
+    }
+
+    renderEngineStatus(channel) {
+        if (channel.channelEngineInstance) {
+            return `
+                <div class="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-sm font-medium text-blue-800">Channel Engine: ${channel.channelEngineInstance}</p>
+                            ${channel.channelEngineUrl ? `
+                                <a href="${channel.channelEngineUrl}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800">
+                                    <i class="fas fa-external-link-alt mr-1"></i>View Stream
+                                </a>
+                            ` : ''}
+                        </div>
+                        <button onclick="app.deleteChannelEngine('${channel.id}')" 
+                                class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded border border-red-300 hover:bg-red-50"
+                                title="Delete Channel Engine">
+                            <i class="fas fa-trash mr-1"></i>Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="p-3 bg-gray-50 rounded-lg border-l-4 border-gray-300">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">No Channel Engine instance</p>
+                            <p class="text-xs text-gray-500">Create a streaming instance for this channel</p>
+                        </div>
+                        <div id="create-engine-btn-${channel.id}">
+                            <button onclick="app.createChannelEngine('${channel.id}', '${channel.name.replace(/'/g, "\\'")}', '${channel.webhookUrl}')" 
+                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs"
+                                    title="Create Channel Engine">
+                                <i class="fas fa-plus mr-1"></i>Create Engine
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    async checkForRunningEngine(channel) {
+        try {
+            // Get list of Channel Engine instances
+            const response = await fetch('/api/channel-engines');
+            if (!response.ok) {
+                // OSC not configured or error - keep create button visible
+                return;
+            }
+            
+            const engines = await response.json();
+            
+            // Check if there's a running engine with this channel's sanitized name
+            const channelSanitizedName = channel.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const runningEngine = engines.find(engine => 
+                engine.name === channelSanitizedName && 
+                engine.status === 'running'
+            );
+            
+            if (runningEngine) {
+                // Hide the create button and show info about the running engine
+                const createBtnContainer = document.getElementById(`create-engine-btn-${channel.id}`);
+                if (createBtnContainer) {
+                    createBtnContainer.innerHTML = `
+                        <div class="text-xs text-orange-600">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Engine "${runningEngine.name}" is running
+                        </div>
+                    `;
+                }
+                
+                // Update the status container with more information
+                const statusContainer = document.getElementById(`engine-status-${channel.id}`);
+                if (statusContainer) {
+                    statusContainer.innerHTML = `
+                        <div class="p-3 bg-orange-50 rounded-lg border-l-4 border-orange-400">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <p class="text-sm font-medium text-orange-800">Unlinked Channel Engine Found</p>
+                                    <p class="text-xs text-orange-600">Engine "${runningEngine.name}" is running but not linked to this channel</p>
+                                    ${runningEngine.url ? `
+                                        <a href="${runningEngine.url}" target="_blank" class="text-xs text-orange-600 hover:text-orange-800">
+                                            <i class="fas fa-external-link-alt mr-1"></i>View Stream
+                                        </a>
+                                    ` : ''}
+                                </div>
+                                <button onclick="app.linkChannelEngine('${channel.id}', '${runningEngine.name}')" 
+                                        class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs"
+                                        title="Link this engine to the channel">
+                                    <i class="fas fa-link mr-1"></i>Link Engine
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        } catch (error) {
+            console.error('Error checking for running engines:', error);
+            // On error, keep the create button visible
+        }
     }
 
 
@@ -683,6 +780,133 @@ class ChannelScheduler {
         }, 3000);
     }
 
+    async createChannelEngine(channelId, channelName, webhookUrl) {
+        try {
+            // Show loading state
+            this.showTemporaryMessage(`Creating Channel Engine for ${channelName}...`, 'info');
+            
+            // Get the public URL for the webhook
+            const response = await fetch('/api/webhook-url');
+            const data = await response.json();
+            const schedulerUrl = data.webhookUrl.split('/webhook/nextVod')[0];
+            
+            // Create Channel Engine instance
+            const createResponse = await fetch(`/api/channels/${channelId}/channel-engine`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    schedulerUrl: schedulerUrl
+                })
+            });
+
+            if (!createResponse.ok) {
+                const error = await createResponse.json();
+                throw new Error(error.error || 'Failed to create Channel Engine');
+            }
+
+            const result = await createResponse.json();
+            
+            // Show success message
+            this.showTemporaryMessage(
+                `Channel Engine "${result.instanceName}" created successfully!`, 
+                'success'
+            );
+            
+            // Reload channels to show the new engine
+            await this.loadChannels();
+            
+        } catch (error) {
+            console.error('Error creating Channel Engine:', error);
+            this.showTemporaryMessage(
+                `Failed to create Channel Engine: ${error.message}`, 
+                'error'
+            );
+        }
+    }
+
+    async deleteChannelEngine(channelId) {
+        try {
+            // Confirm deletion
+            if (!confirm('Are you sure you want to delete this Channel Engine instance? This action cannot be undone.')) {
+                return;
+            }
+            
+            // Show loading state
+            this.showTemporaryMessage('Deleting Channel Engine...', 'info');
+            
+            // Delete Channel Engine instance
+            const response = await fetch(`/api/channels/${channelId}/channel-engine`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to delete Channel Engine');
+            }
+
+            const result = await response.json();
+            
+            // Show success message
+            this.showTemporaryMessage(
+                'Channel Engine deleted successfully!', 
+                'success'
+            );
+            
+            // Reload channels to update the UI
+            await this.loadChannels();
+            
+        } catch (error) {
+            console.error('Error deleting Channel Engine:', error);
+            this.showTemporaryMessage(
+                `Failed to delete Channel Engine: ${error.message}`, 
+                'error'
+            );
+        }
+    }
+
+    async linkChannelEngine(channelId, engineName) {
+        try {
+            // Show loading state
+            this.showTemporaryMessage(`Linking Channel Engine "${engineName}"...`, 'info');
+            
+            // Link the existing engine to this channel
+            const response = await fetch(`/api/channels/${channelId}/channel-engine/link`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    instanceName: engineName
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to link Channel Engine');
+            }
+
+            const result = await response.json();
+            
+            // Show success message
+            this.showTemporaryMessage(
+                `Channel Engine "${engineName}" linked successfully!`, 
+                'success'
+            );
+            
+            // Reload channels to update the UI
+            await this.loadChannels();
+            
+        } catch (error) {
+            console.error('Error linking Channel Engine:', error);
+            this.showTemporaryMessage(
+                `Failed to link Channel Engine: ${error.message}`, 
+                'error'
+            );
+        }
+    }
+
     async viewSchedule(channelId, channelName) {
         this.currentChannelId = channelId;
         document.getElementById('schedule-title').textContent = `${channelName} - Schedule`;
@@ -1110,12 +1334,55 @@ class ChannelScheduler {
     }
 
     async deleteChannel(channelId) {
-        if (confirm('Are you sure you want to delete this channel?')) {
+        // Get channel info first to show in confirmation
+        let channelName = 'this channel';
+        let hasEngine = false;
+        
+        try {
+            const response = await fetch(`/api/channels/${channelId}`);
+            if (response.ok) {
+                const channel = await response.json();
+                channelName = channel.name;
+                hasEngine = !!channel.channelEngineInstance;
+            }
+        } catch (error) {
+            console.error('Error getting channel info:', error);
+        }
+
+        // Show appropriate confirmation message
+        const confirmMessage = hasEngine 
+            ? `Are you sure you want to delete "${channelName}"?\n\nThis will also delete the connected Channel Engine instance and all scheduled content. This action cannot be undone.`
+            : `Are you sure you want to delete "${channelName}"?\n\nThis will delete all scheduled content. This action cannot be undone.`;
+
+        if (confirm(confirmMessage)) {
             try {
-                await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
+                // Show loading message
+                this.showTemporaryMessage(`Deleting ${channelName}...`, 'info');
+
+                const response = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to delete channel');
+                }
+
+                const result = await response.json();
+                
+                // Show success message with details
+                let message = `Channel "${channelName}" deleted successfully!`;
+                if (result.deletedChannelEngine) {
+                    message += ` Channel Engine "${result.deletedChannelEngine}" was also removed.`;
+                }
+                
+                this.showTemporaryMessage(message, 'success');
                 this.loadChannels();
+                
             } catch (error) {
                 console.error('Error deleting channel:', error);
+                this.showTemporaryMessage(
+                    `Failed to delete channel: ${error.message}`, 
+                    'error'
+                );
             }
         }
     }

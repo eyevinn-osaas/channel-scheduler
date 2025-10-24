@@ -115,11 +115,44 @@ fastify.put('/api/channels/:id', async (request, reply) => {
 
 fastify.delete('/api/channels/:id', async (request, reply) => {
   try {
-    await prisma.channel.delete({
-      where: { id: request.params.id }
+    const { id } = request.params;
+
+    // Get the channel first to check if it has a Channel Engine instance
+    const channel = await prisma.channel.findUnique({
+      where: { id }
     });
-    return { success: true };
+
+    if (!channel) {
+      return reply.code(404).send({ error: 'Channel not found' });
+    }
+
+    // If channel has a Channel Engine instance, delete it first
+    if (channel.channelEngineInstance && oscClient.isConfigured()) {
+      try {
+        console.log(`Deleting Channel Engine instance "${channel.channelEngineInstance}" for channel "${channel.name}"`);
+        await oscClient.deleteChannelEngineInstance(channel.channelEngineInstance);
+        console.log(`Channel Engine instance "${channel.channelEngineInstance}" deleted successfully`);
+      } catch (engineError) {
+        console.error('Error deleting Channel Engine instance:', engineError);
+        // Continue with channel deletion even if engine deletion fails
+        // This prevents orphaned channels when the engine might already be deleted
+      }
+    }
+
+    // Delete the channel (this will cascade delete schedules due to foreign key constraints)
+    await prisma.channel.delete({
+      where: { id }
+    });
+
+    console.log(`Channel "${channel.name}" and associated resources deleted successfully`);
+
+    return { 
+      success: true,
+      message: `Channel "${channel.name}" deleted successfully`,
+      deletedChannelEngine: channel.channelEngineInstance || null
+    };
   } catch (error) {
+    console.error('Error deleting channel:', error);
     reply.code(500).send({ error: 'Failed to delete channel' });
   }
 });
@@ -422,7 +455,7 @@ fastify.post('/api/channels/:id/channel-engine', async (request, reply) => {
     
     // Create Channel Engine instance name from channel name (alphanumeric only)
     const instanceName = channel.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const webhookUrl = `${schedulerUrl}/webhook/nextVod?channelId=${instanceName}`;
+    const webhookUrl = `${schedulerUrl}/webhook/nextVod`;
     
     // Create Channel Engine instance via OSC API
     let result;
@@ -483,8 +516,8 @@ fastify.delete('/api/channels/:id/channel-engine', async (request, reply) => {
         console.log('Deleting Channel Engine instance via OSC API...');
         result = await oscClient.deleteChannelEngineInstance(instanceName);
       } else {
-        console.log('OSC_ACCESS_TOKEN not configured, using simulation mode...');
-        result = await oscClient.simulateChannelEngineDeletion(instanceName);
+        console.log('OSC_ACCESS_TOKEN not configured, skipping Channel Engine deletion...');
+        result = { success: false, reason: 'OSC not configured', simulated: true };
       }
     } catch (oscError) {
       console.error('Failed to delete Channel Engine via OSC API:', oscError);
@@ -513,6 +546,63 @@ fastify.delete('/api/channels/:id/channel-engine', async (request, reply) => {
   } catch (error) {
     console.error('Error deleting Channel Engine:', error);
     reply.code(500).send({ error: 'Failed to delete Channel Engine instance' });
+  }
+});
+
+// Link existing Channel Engine instance to channel
+fastify.post('/api/channels/:id/channel-engine/link', async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const { instanceName } = request.body;
+
+    if (!instanceName) {
+      return reply.code(400).send({ error: 'Instance name is required' });
+    }
+
+    // Check if OSC is configured
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'OSC not configured' });
+    }
+
+    // Get the channel
+    const channel = await prisma.channel.findUnique({
+      where: { id }
+    });
+
+    if (!channel) {
+      return reply.code(404).send({ error: 'Channel not found' });
+    }
+
+    // Check if channel already has an engine
+    if (channel.channelEngineInstance) {
+      return reply.code(400).send({ error: 'Channel already has a Channel Engine instance' });
+    }
+
+    // Get the webhook URL for this channel
+    const publicUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const webhookUrl = `${publicUrl}/webhook/nextVod`;
+
+    // Update the channel with the linked engine
+    const updatedChannel = await prisma.channel.update({
+      where: { id },
+      data: {
+        channelEngineInstance: instanceName,
+        webhookUrl: webhookUrl
+      }
+    });
+
+    console.log(`Linked existing Channel Engine "${instanceName}" to channel "${channel.name}"`);
+
+    reply.send({
+      message: 'Channel Engine linked successfully',
+      instanceName,
+      webhookUrl,
+      channel: updatedChannel
+    });
+
+  } catch (error) {
+    console.error('Error linking Channel Engine:', error);
+    reply.code(500).send({ error: 'Failed to link Channel Engine' });
   }
 });
 
