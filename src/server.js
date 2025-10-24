@@ -52,12 +52,13 @@ fastify.post('/api/channels', async (request, reply) => {
     const webhookUrl = `${publicUrl}/webhook/nextVod`;
     
     const channel = await prisma.channel.create({
-      data: { 
-        name, 
-        description, 
+      data: {
+        name,
+        description,
         webhookUrl,
         scheduleStart: scheduleStart ? new Date(scheduleStart) : null,
-        autoSchedule: autoSchedule !== undefined ? autoSchedule : true
+        autoSchedule: autoSchedule !== undefined ? autoSchedule : true,
+        scheduleSynced: false
       }
     });
     return channel;
@@ -89,15 +90,22 @@ fastify.put('/api/channels/:id', async (request, reply) => {
     const publicUrl = getPublicUrl();
     const webhookUrl = `${publicUrl}/webhook/nextVod`;
     
+    const updateData = {
+      name,
+      description,
+      webhookUrl,
+      autoSchedule: autoSchedule !== undefined ? autoSchedule : undefined
+    };
+
+    // If schedule start time is being updated, reset the sync flag
+    if (scheduleStart !== undefined) {
+      updateData.scheduleStart = scheduleStart ? new Date(scheduleStart) : null;
+      updateData.scheduleSynced = false;
+    }
+
     const channel = await prisma.channel.update({
       where: { id: request.params.id },
-      data: { 
-        name, 
-        description, 
-        webhookUrl,
-        scheduleStart: scheduleStart ? new Date(scheduleStart) : null,
-        autoSchedule: autoSchedule !== undefined ? autoSchedule : undefined
-      }
+      data: updateData
     });
     return channel;
   } catch (error) {

@@ -133,17 +133,24 @@ async function rebalanceSchedule(channelId, startFromPosition = 1) {
   }
 }
 
-async function updateChannelScheduleStart(channelId, newStartTime) {
+async function updateChannelScheduleStart(channelId, newStartTime, resetSyncFlag = true) {
   try {
+    const updateData = { scheduleStart: new Date(newStartTime) };
+
+    // Reset sync flag when manually updating schedule start time
+    if (resetSyncFlag) {
+      updateData.scheduleSynced = false;
+    }
+
     // Update the channel's schedule start time
     await prisma.channel.update({
       where: { id: channelId },
-      data: { scheduleStart: new Date(newStartTime) }
+      data: updateData
     });
 
     // Rebalance the entire schedule
     await rebalanceSchedule(channelId, 1);
-    
+
     console.log(`Updated schedule start time and rebalanced channel ${channelId}`);
   } catch (error) {
     console.error('Error updating channel schedule start:', error);
