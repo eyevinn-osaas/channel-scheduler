@@ -8,15 +8,19 @@ A web-based interface for scheduling and managing video content for [Eyevinn Cha
 
 - **Professional Rundown Interface**: Compact, broadcast-style schedule view with start times and current playing indicators
 - **Real-time Status**: Live webhook-based status monitoring of channel engines
-- **Channel Management**: Create and manage multiple TV channels
-- **VOD Library**: Maintain a library of video on demand content
-- **Schedule Management**: Add, reorder, and time content for automatic playback
+- **Channel Management**: Create and manage multiple TV channels with integrated Channel Engine management
+- **OSC Integration**: Native integration with Open Source Cloud (OSC) for automatic Channel Engine lifecycle management
+- **VOD Library**: Maintain a library of video on demand content with searchable sidebar interface
+- **Schedule Management**: Add, reorder, and time content for automatic playback with intelligent looping
 - **Webhook Integration**: Seamless integration with Channel Engine webhook system
+- **Engine Management**: One-click creation, linking, and deletion of Channel Engine instances
+- **Live Stream Preview**: Built-in HLS video players for monitoring channel outputs
 
 ## Prerequisites
 
 - Node.js 16+ and npm
-- [Eyevinn Channel Engine](https://app.osaas.io/browse/channel-engine) instance(s)
+- OSC (Open Source Cloud) account for Channel Engine management (optional but recommended)
+- [Eyevinn Channel Engine](https://app.osaas.io/browse/channel-engine) instances (can be created automatically)
 
 ## Setup
 
@@ -43,7 +47,23 @@ Create a `.env` file:
 PORT=3000
 PUBLIC_URL="http://localhost:3000"
 DATA_DIR="./data"
+OSC_ACCESS_TOKEN="your-osc-access-token"  # Optional: For automated Channel Engine management
 ```
+
+#### OSC Integration (Recommended)
+
+To enable automatic Channel Engine management, obtain your OSC access token:
+
+1. Go to [OSC Dashboard](https://app.osaas.io/)
+2. Navigate to **Settings > Access Tokens**
+3. Create a new access token with Channel Engine permissions
+4. Add the token to your `.env` file as `OSC_ACCESS_TOKEN`
+
+With OSC integration enabled, you can:
+- Create Channel Engine instances directly from the UI
+- Automatically detect and link existing engines
+- Monitor engine status and stream URLs
+- Delete engines when removing channels
 
 For webhook functionality, you'll need a publicly accessible URL. Use ngrok for development:
 
@@ -66,52 +86,68 @@ npm start
 
 The application will be available at `http://localhost:3000`
 
-## Channel Engine Setup
+## Channel Engine Management
 
-### Creating a Channel Engine Instance
+The Channel Scheduler now provides **automated Channel Engine management** through OSC integration. You have two options for setting up Channel Engines:
 
-1. Go to [OSC Channel Engine](https://app.osaas.io/browse/channel-engine)
-2. Create a new **Channel Engine** instance
-3. **CRITICAL**: The instance name must exactly match your channel name in the scheduler
+### Option 1: Automatic Management (Recommended)
 
-### Instance Name Matching Requirement
+With OSC integration enabled, Channel Engine instances are managed automatically:
 
-⚠️ **IMPORTANT**: The Channel Engine instance name in OSC must exactly match the channel name you create in the Channel Scheduler. This is how the webhook system identifies which channel to serve content for.
+1. **Create Channel**: Add a new channel in the scheduler
+2. **Create Engine**: Click "Create Engine" button on the channel card
+3. **Automatic Configuration**: The engine is created with matching name and webhook URL
+4. **Monitor Status**: View live status and stream preview in the UI
 
-**Example:**
-- Channel Scheduler channel name: `my-awesome-channel`
-- OSC Channel Engine instance name: `my-awesome-channel`
+The system automatically:
+- ✅ Creates Channel Engine instances with sanitized names (alphanumeric only)
+- ✅ Configures webhook URLs for seamless integration
+- ✅ Detects existing engines and offers linking options
+- ✅ Provides live stream previews with HLS video players
+- ✅ Cleans up engines when channels are deleted
 
-### Webhook Configuration
+### Option 2: Manual Setup
 
-The Channel Scheduler automatically provides webhook URLs for your channels. The webhook endpoint follows this format:
+If you prefer manual control or don't have OSC integration:
 
-```
-https://your-domain.com/webhook/nextVod?channelId=CHANNEL_NAME
-```
+1. **Create Channel Engine Instance**:
+   - Go to [OSC Channel Engine](https://app.osaas.io/browse/channel-engine)
+   - Create instance with name matching your channel (alphanumeric only)
+   - Configure webhook URL: `https://your-domain.com/webhook/nextVod`
 
-**Channel Engine Configuration:**
-1. Set the webhook URL in your Channel Engine instance configuration
-2. The Channel Engine will call this webhook to get the next video to play
-3. The scheduler responds with the appropriate content based on the current schedule
+2. **Link to Channel**:
+   - The scheduler will detect running engines
+   - Click "Link Engine" if an unlinked engine is found
+   - Or manually configure the channel with the engine name
 
-### Channel Engine Environment Variables
+### Engine Status Indicators
 
-When creating your Channel Engine instance, you may need to configure:
+The channel cards display comprehensive engine status:
 
-- `WEBHOOK_URL`: Set this to your Channel Scheduler webhook URL
-- `PRESET`: Choose appropriate channel preset (e.g., `tv`, `radio`)
-- Other settings as needed for your specific use case
+- 🔵 **Blue**: Channel has linked Channel Engine (ready to stream)
+- 🟠 **Orange**: Unlinked engine detected (click to link)
+- ⚪ **Gray**: No engine instance (click to create)
+- 🟢 **Green**: Additional webhook configuration status
+
+### Channel Engines Tab
+
+Access the dedicated **Engines** tab to:
+- View all Channel Engine instances across your OSC account
+- Monitor status (running, stopped, starting)
+- Preview live streams with built-in video players
+- Filter to show only WebHook-type engines
+- Identify which engines are connected to this scheduler
 
 ## Usage
 
 ### 1. Create a Channel
 
 1. Click **"Add Channel"** in the Channels view
-2. Enter channel name (must match your OSC instance name exactly)
-3. Set description and webhook URL
+2. Enter channel name (will be sanitized for engine creation)
+3. Set description and optional settings
 4. Configure schedule start time
 5. Enable automatic back-to-back scheduling if desired
+6. **Optional**: Click "Create Engine" to automatically create a Channel Engine instance
 
 ### 2. Add VOD Content
 
@@ -124,16 +160,20 @@ When creating your Channel Engine instance, you may need to configure:
 ### 3. Schedule Content
 
 1. Select a channel to view its schedule
-2. Click **"Add VOD"** to add content to the schedule
-3. Choose back-to-back scheduling or set specific times
+2. Click **"Add VODs"** to open the searchable sidebar
+3. Search and click any VOD to add it to the schedule (automatic back-to-back scheduling)
 4. Use **"Rebalance"** to redistribute timing across all scheduled content
 5. Monitor the **"ON AIR"** indicator to see what's currently playing
+6. Schedule automatically loops back to the beginning when reaching the end
 
-### 4. Monitor Status
+### 4. Monitor Status and Streams
 
+- **Engine Status**: Real-time status indicators (running, stopped, starting)
+- **Live Stream Preview**: Built-in HLS video players for each Channel Engine
 - **Online/Offline Status**: Shows if the Channel Engine is actively requesting content
 - **Current Playing**: Red border and "ON AIR" indicator show what's currently broadcasting
 - **Webhook Activity**: Status updates automatically based on webhook calls from Channel Engine
+- **Channel Engines Tab**: Dedicated view for monitoring all engine instances with stream previews
 
 ## API Endpoints
 
@@ -150,6 +190,13 @@ When creating your Channel Engine instance, you may need to configure:
 - `GET /api/channels/:id/current` - Get currently playing content
 - `GET /api/vods` - List all VODs
 - `POST /api/vods` - Create new VOD
+
+### Channel Engine API
+
+- `GET /api/channel-engines` - List all Channel Engine instances
+- `POST /api/channels/:id/channel-engine` - Create Channel Engine for channel
+- `DELETE /api/channels/:id/channel-engine` - Delete Channel Engine instance
+- `POST /api/channels/:id/channel-engine/link` - Link existing engine to channel
 
 ## Development
 
@@ -171,10 +218,12 @@ npx prisma migrate reset
 ```
 ├── src/
 │   ├── server.js         # Main server and API routes
-│   └── webhook.js        # Webhook handling logic
+│   ├── webhook.js        # Webhook handling logic
+│   ├── oscClient.js      # OSC integration and Channel Engine management
+│   └── schedulingUtils.js # Schedule timing and rebalancing logic
 ├── public/
-│   ├── index.html        # Main UI
-│   └── app.js           # Frontend JavaScript
+│   ├── index.html        # Main UI with Channel Engines tab
+│   └── app.js           # Frontend JavaScript with engine management
 ├── prisma/
 │   ├── schema.prisma     # Database schema
 │   └── migrations/       # Database migrations
@@ -183,12 +232,18 @@ npx prisma migrate reset
 
 ## Troubleshooting
 
+### OSC Integration Issues
+
+1. **"OSC not configured" error**: Add your `OSC_ACCESS_TOKEN` to `.env` file
+2. **Cannot create engines**: Verify your OSC token has Channel Engine permissions
+3. **Engine not detected**: Check that the engine name matches the sanitized channel name (alphanumeric only)
+
 ### Channel Engine Not Responding
 
-1. Verify the instance name exactly matches your channel name
-2. Check that the webhook URL is publicly accessible
-3. Ensure the Channel Engine instance is running and properly configured
-4. Check the application logs for webhook request errors
+1. Check the **Engines** tab to verify engine status (running/stopped)
+2. Ensure the webhook URL is publicly accessible (use ngrok for development)
+3. Verify the engine is linked to the correct channel (check for orange "Unlinked" warnings)
+4. Use the built-in video player to test if the stream is working
 
 ### Content Not Playing
 
@@ -196,6 +251,14 @@ npx prisma migrate reset
 2. Check that content is properly scheduled with valid start/end times
 3. Ensure the channel has a schedule start time set
 4. Verify the Channel Engine is calling the webhook (check Online/Offline status)
+5. Monitor the live stream preview to see if content is actually broadcasting
+
+### Engine Management Issues
+
+1. **"Create Engine" button not showing**: An engine with the same name may already be running
+2. **Engine creation fails**: Check OSC account limits and permissions
+3. **Stream not playing in preview**: Verify the HLS URL is accessible and the engine is running
+4. **Engines not listed**: Ensure OSC_ACCESS_TOKEN is configured and valid
 
 ### Database Issues
 
@@ -235,6 +298,7 @@ When deploying as a service in OSC (Open Source Cloud), the container automatica
 ```yaml
 environment:
   - OSC_HOSTNAME=your-instance.osaas.io  # Auto-sets PUBLIC_URL
+  - OSC_ACCESS_TOKEN=your-osc-token      # For Channel Engine management
   # OR set PUBLIC_URL directly:
   # - PUBLIC_URL=https://your-domain.com
 ```
@@ -251,6 +315,7 @@ docker run -d \
   -p 3000:3000 \
   -v channel_data:/app/data \
   -e OSC_HOSTNAME=your-hostname.example.com \
+  -e OSC_ACCESS_TOKEN=your-osc-token \
   channel-scheduler
 ```
 
@@ -271,6 +336,7 @@ npx prisma migrate deploy
 export PUBLIC_URL="https://your-domain.com"
 export PORT=3000
 export DATA_DIR="/app/data"
+export OSC_ACCESS_TOKEN="your-osc-token"  # Optional: For engine management
 
 # Start with process manager
 pm2 start index.js --name channel-scheduler
