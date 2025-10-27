@@ -319,6 +319,27 @@ docker run -d \
   channel-scheduler
 ```
 
+### Eyevinn Open Source Cloud Deployment
+
+The easiest way to deploy Channel Scheduler is through **Eyevinn Open Source Cloud**, a managed platform that provides instant deployment with zero infrastructure setup.
+
+**🚀 Deploy in One Click:**
+
+1. Visit [Channel Engine Scheduler on Open Source Cloud](https://docs.osaas.io/osaas.wiki/Service%3A-Channel-Engine-Scheduler.html)
+2. Click **"Deploy"** to create your instance
+3. Configure your OSC access token for Channel Engine management
+4. Start scheduling immediately with professional broadcast tools
+
+**Benefits of Open Source Cloud Deployment:**
+- ✅ **Zero Setup** - No Docker, dependencies, or server management
+- ✅ **Automatic Scaling** - Built-in load balancing and reliability
+- ✅ **Integrated Billing** - Pay-as-you-use pricing model
+- ✅ **OSC Native** - Seamless Channel Engine integration
+- ✅ **SSL & Security** - HTTPS endpoints and secure webhook handling
+- ✅ **Monitoring** - Built-in health checks and status monitoring
+
+Perfect for production deployments, development environments, and teams who want to focus on content scheduling rather than infrastructure management.
+
 ### Manual Deployment
 
 For traditional hosting without Docker:
