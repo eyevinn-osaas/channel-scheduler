@@ -78,6 +78,12 @@ class ChannelScheduler {
         document.getElementById('copy-global-webhook').addEventListener('click', () => this.copyGlobalWebhookUrl());
         document.getElementById('global-webhook-url').addEventListener('click', () => this.copyGlobalWebhookUrl());
 
+        // File upload events
+        document.getElementById('upload-area').addEventListener('click', () => {
+            document.getElementById('file-upload').click();
+        });
+        document.getElementById('file-upload').addEventListener('change', (e) => this.handleFileUpload(e));
+
         // Click outside modal to close
         document.getElementById('channel-modal').addEventListener('click', (e) => {
             if (e.target.id === 'channel-modal') this.hideChannelModal();
@@ -1127,12 +1133,36 @@ class ChannelScheduler {
             document.getElementById('vod-form').reset();
         }
         
+        // Reset upload UI
+        this.resetUploadUI();
+        
         modal.classList.remove('hidden');
     }
 
     hideVODModal() {
         document.getElementById('vod-modal').classList.add('hidden');
         this.editingVodId = null;
+    }
+
+    resetUploadUI() {
+        // Reset file input
+        document.getElementById('file-upload').value = '';
+        
+        // Clear current transcoding job
+        this.currentTranscodingJob = null;
+        
+        // Show upload area, hide progress and success
+        document.getElementById('upload-area').classList.remove('hidden');
+        document.getElementById('upload-progress').classList.add('hidden');
+        document.getElementById('upload-success').classList.add('hidden');
+        
+        // Reset upload area content
+        const uploadArea = document.getElementById('upload-area');
+        uploadArea.innerHTML = `
+            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+            <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+            <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+        `;
     }
 
     async loadVODForEdit(vodId) {
@@ -1148,6 +1178,197 @@ class ChannelScheduler {
             document.getElementById('vod-preroll-duration').value = vod.prerollDurationMs || '';
         } catch (error) {
             console.error('Error loading VOD for edit:', error);
+        }
+    }
+
+    async handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Show upload progress
+        document.getElementById('upload-area').classList.add('hidden');
+        document.getElementById('upload-progress').classList.remove('hidden');
+        document.getElementById('upload-success').classList.add('hidden');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('/api/upload-file', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Upload failed');
+            }
+
+            const result = await response.json();
+            
+            // Show success state
+            document.getElementById('upload-progress').classList.add('hidden');
+            document.getElementById('upload-success').classList.remove('hidden');
+            document.getElementById('uploaded-filename').textContent = result.originalName;
+
+            // Auto-populate title if empty
+            const titleField = document.getElementById('vod-title');
+            if (!titleField.value) {
+                // Use original filename without extension as title
+                const nameWithoutExt = result.originalName.replace(/\.[^/.]+$/, "");
+                titleField.value = nameWithoutExt;
+            }
+
+            // Check if this is a video file that needs transcoding
+            const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv'];
+            const fileExt = result.originalName.toLowerCase().substring(result.originalName.lastIndexOf('.'));
+            
+            if (videoExtensions.includes(fileExt)) {
+                // Start transcoding for video files
+                await this.startTranscoding(result.filename, result.originalName);
+            } else if (result.url) {
+                // For HLS files or other formats, use the direct URL
+                document.getElementById('vod-hls-url').value = result.url;
+            }
+
+        } catch (error) {
+            console.error('Upload failed:', error);
+            
+            // Show error state
+            document.getElementById('upload-progress').classList.add('hidden');
+            document.getElementById('upload-area').classList.remove('hidden');
+            
+            // Show error message
+            const uploadArea = document.getElementById('upload-area');
+            uploadArea.innerHTML = `
+                <i class="fas fa-exclamation-triangle text-3xl text-red-400 mb-2"></i>
+                <p class="text-sm text-red-600">Upload failed: ${error.message}</p>
+                <p class="text-xs text-gray-400 mt-1">Click to try again</p>
+            `;
+            
+            // Reset after 3 seconds
+            setTimeout(() => {
+                uploadArea.innerHTML = `
+                    <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                    <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+                    <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+                `;
+            }, 3000);
+        }
+    }
+
+    async startTranscoding(filename, originalName) {
+        try {
+            // Show transcoding status
+            const uploadSuccess = document.getElementById('upload-success');
+            uploadSuccess.innerHTML = `
+                <i class="fas fa-cog fa-spin mr-1 text-blue-500"></i>
+                <span>Transcoding ${originalName} to HLS...</span>
+            `;
+
+            const response = await fetch('/api/transcode-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, originalName })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Transcoding failed');
+            }
+
+            const result = await response.json();
+            
+            // Store transcoding info for polling
+            this.currentTranscodingJob = {
+                jobId: result.jobId,
+                hlsUrl: result.hlsUrl,
+                originalName: originalName
+            };
+
+            // Start polling for status
+            this.pollTranscodingStatus();
+
+        } catch (error) {
+            console.error('Transcoding failed:', error);
+            
+            // Show error in upload success area
+            const uploadSuccess = document.getElementById('upload-success');
+            uploadSuccess.innerHTML = `
+                <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i>
+                <span class="text-red-600">Transcoding failed: ${error.message}</span>
+            `;
+        }
+    }
+
+    async pollTranscodingStatus() {
+        if (!this.currentTranscodingJob) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/transcode-status/${this.currentTranscodingJob.jobId}`);
+            
+            if (!response.ok) {
+                throw new Error('Failed to check transcoding status');
+            }
+
+            const result = await response.json();
+            
+            const uploadSuccess = document.getElementById('upload-success');
+            
+            if (result.status === 'processing') {
+                uploadSuccess.innerHTML = `
+                    <i class="fas fa-cog fa-spin mr-1 text-blue-500"></i>
+                    <span>Transcoding ${this.currentTranscodingJob.originalName}... (${result.status})</span>
+                `;
+                
+                // Continue polling
+                setTimeout(() => this.pollTranscodingStatus(), 3000);
+                
+            } else if (result.status === 'completed') {
+                uploadSuccess.innerHTML = `
+                    <i class="fas fa-check-circle mr-1 text-green-500"></i>
+                    <span class="text-green-600">Transcoding completed!</span>
+                `;
+                
+                // Populate HLS URL field
+                document.getElementById('vod-hls-url').value = this.currentTranscodingJob.hlsUrl;
+                
+                // Clear transcoding job
+                this.currentTranscodingJob = null;
+                
+            } else if (result.status === 'failed') {
+                uploadSuccess.innerHTML = `
+                    <i class="fas fa-times-circle mr-1 text-red-500"></i>
+                    <span class="text-red-600">Transcoding failed</span>
+                `;
+                
+                this.currentTranscodingJob = null;
+                
+            } else if (result.status === 'suspended') {
+                uploadSuccess.innerHTML = `
+                    <i class="fas fa-pause-circle mr-1 text-yellow-500"></i>
+                    <span class="text-yellow-600">Transcoding suspended</span>
+                `;
+                
+                this.currentTranscodingJob = null;
+                
+            } else {
+                // Continue polling for unknown statuses
+                setTimeout(() => this.pollTranscodingStatus(), 3000);
+            }
+
+        } catch (error) {
+            console.error('Error polling transcoding status:', error);
+            
+            const uploadSuccess = document.getElementById('upload-success');
+            uploadSuccess.innerHTML = `
+                <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i>
+                <span class="text-red-600">Error checking transcoding status</span>
+            `;
+            
+            this.currentTranscodingJob = null;
         }
     }
 

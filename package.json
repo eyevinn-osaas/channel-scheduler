@@ -13,13 +13,16 @@
   "description": "",
   "dependencies": {
     "@fastify/cors": "^11.1.0",
+    "@fastify/multipart": "^9.3.0",
     "@fastify/static": "^8.2.0",
     "@osaas/client-core": "^0.18.0",
     "@osaas/client-services": "^0.11.5",
     "@prisma/client": "^6.16.2",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.12.2",
     "fastify": "^5.6.1",
     "hls-parser": "^0.14.0",
+    "multer": "^2.0.2",
     "prisma": "^6.16.2",
     "sqlite3": "^5.1.7"
   }

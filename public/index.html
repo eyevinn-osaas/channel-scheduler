@@ -218,9 +218,33 @@
                         <textarea id="vod-description" class="w-full border rounded-lg px-3 py-2" rows="3"></textarea>
                     </div>
                     <div class="mb-4">
-                        <label class="block text-sm font-medium mb-2">HLS URL</label>
+                        <label class="block text-sm font-medium mb-2">Upload Video File</label>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
+                            <input type="file" id="file-upload" class="hidden" accept="video/*,audio/*,.m3u8,.ts,.mp4,.mov,.avi,.mkv">
+                            <div id="upload-area" class="cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                                <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+                                <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+                            </div>
+                            <div id="upload-progress" class="hidden">
+                                <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
+                                    <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full" style="width: 0%"></div>
+                                </div>
+                                <p id="upload-status" class="text-sm text-gray-600">Uploading...</p>
+                            </div>
+                            <div id="upload-success" class="hidden text-green-600">
+                                <i class="fas fa-check-circle mr-1"></i>
+                                <span id="uploaded-filename">File uploaded successfully</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">
+                            HLS URL
+                            <span class="text-xs text-gray-500">(or use uploaded file above)</span>
+                        </label>
                         <div class="flex space-x-2">
-                            <input type="url" id="vod-hls-url" class="flex-1 border rounded-lg px-3 py-2" required>
+                            <input type="url" id="vod-hls-url" class="flex-1 border rounded-lg px-3 py-2">
                             <button type="button" id="detect-duration-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
                                 <i class="fas fa-magic mr-1"></i>Detect
                             </button>

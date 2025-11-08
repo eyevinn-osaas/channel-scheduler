@@ -1,4 +1,7 @@
-const fastify = require('fastify')({ logger: true });
+const fastify = require('fastify')({ 
+  logger: true,
+  bodyLimit: 100 * 1024 * 1024 * 1024 // 100GB body limit
+});
 const { PrismaClient } = require('@prisma/client');
 const path = require('path');
 const { registerWebhookRoutes } = require('./webhook');
@@ -19,6 +22,52 @@ function getPublicUrl() {
   return 'http://localhost:3000';
 }
 
+// Setup MinIO instance with input and output buckets
+async function setupMinioForScheduler(instanceName = 'schedulerstorage', username = 'admin', password = null) {
+  if (!oscClient.isConfigured()) {
+    console.log('OSC not configured - skipping MinIO setup');
+    return null;
+  }
+
+  try {
+    console.log('Setting up MinIO instance for scheduler...');
+    
+    // Check if instance already exists
+    let minioConfig;
+    try {
+      minioConfig = await oscClient.getMinioInstance(instanceName);
+      console.log(`MinIO instance '${instanceName}' already exists and is running`);
+    } catch (error) {
+      // Instance doesn't exist or is not running, create it
+      console.log(`MinIO instance '${instanceName}' not found or not running, creating new instance...`);
+      console.log(`Error details: ${error.message}`);
+      minioConfig = await oscClient.createMinioInstance(instanceName, username, password);
+    }
+
+    // Create buckets
+    console.log('Creating input and output buckets...');
+    const bucketResults = await oscClient.createMinioBuckets(
+      minioConfig, 
+      ['input', 'output'], 
+      true // Make output bucket public
+    );
+
+    console.log('MinIO setup completed:', {
+      instance: minioConfig.instanceName,
+      endpoint: minioConfig.endpoint,
+      buckets: bucketResults
+    });
+
+    return {
+      minioConfig,
+      bucketResults
+    };
+  } catch (error) {
+    console.error('Failed to setup MinIO for scheduler:', error);
+    throw error;
+  }
+}
+
 fastify.register(require('@fastify/cors'), {
   origin: true
 });
@@ -26,6 +75,17 @@ fastify.register(require('@fastify/cors'), {
 fastify.register(require('@fastify/static'), {
   root: path.join(__dirname, '../public'),
   prefix: '/'
+});
+
+fastify.register(require('@fastify/multipart'), {
+  limits: {
+    fileSize: 100 * 1024 * 1024 * 1024, // 100GB max file size
+    files: 1,
+    fieldNameSize: 100,
+    fieldSize: 100,
+    fields: 10,
+    headerPairs: 2000
+  }
 });
 
 // Register webhook routes
@@ -281,6 +341,203 @@ fastify.delete('/api/vods/:id', async (request, reply) => {
   }
 });
 
+// File upload endpoint for VODs
+fastify.post('/api/upload-file', async (request, reply) => {
+  try {
+    // Check if MinIO is configured
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'MinIO not configured. OSC_ACCESS_TOKEN required.' });
+    }
+
+    // Get the uploaded file
+    const data = await request.file();
+    
+    if (!data) {
+      return reply.code(400).send({ error: 'No file uploaded' });
+    }
+
+    // Get MinIO configuration
+    let minioConfig;
+    try {
+      minioConfig = await oscClient.getMinioInstance('schedulerstorage');
+    } catch (error) {
+      return reply.code(500).send({ error: 'MinIO instance not available. Please set up MinIO first.' });
+    }
+
+    // Configure S3 client for MinIO
+    const AWS = require('aws-sdk');
+    const s3 = new AWS.S3({
+      endpoint: minioConfig.endpoint,
+      accessKeyId: minioConfig.rootUser,
+      secretAccessKey: minioConfig.rootPassword,
+      region: minioConfig.region,
+      s3ForcePathStyle: true,
+      signatureVersion: 'v4'
+    });
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const originalName = data.filename || 'uploaded-file';
+    const filename = `${timestamp}-${originalName}`;
+
+    // Use managed upload for better large file handling
+    const uploadParams = {
+      Bucket: 'input',
+      Key: filename,
+      Body: data.file,
+      ContentType: data.mimetype || 'application/octet-stream'
+    };
+
+    // Use managed upload with progress tracking
+    const upload = s3.upload(uploadParams);
+    
+    const result = await upload.promise();
+
+    // Verify the file is fully uploaded and accessible
+    let retries = 0;
+    const maxRetries = 10;
+    let lastSize = 0;
+    
+    while (retries < maxRetries) {
+      try {
+        const headResult = await s3.headObject({
+          Bucket: 'input',
+          Key: filename
+        }).promise();
+        
+        // Check if file size is stable (not changing between checks)
+        if (headResult.ContentLength > 0 && headResult.ContentLength === lastSize) {
+          break;
+        }
+        
+        lastSize = headResult.ContentLength;
+      } catch (error) {
+        // File not yet available, continue retrying
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for larger files
+      retries++;
+    }
+    
+    if (retries >= maxRetries) {
+      throw new Error('File upload verification failed - file may not be fully uploaded');
+    }
+    
+    // Get final file size for response
+    const finalHead = await s3.headObject({
+      Bucket: 'input', 
+      Key: filename
+    }).promise();
+    
+    return {
+      success: true,
+      filename: filename,
+      originalName: originalName,
+      size: finalHead.ContentLength,
+      mimetype: data.mimetype,
+      url: result.Location,
+      s3Key: result.Key
+    };
+
+  } catch (error) {
+    console.error('File upload failed:', error);
+    reply.code(500).send({ error: 'Failed to upload file' });
+  }
+});
+
+// Transcoding endpoints
+fastify.post('/api/transcode-file', async (request, reply) => {
+  try {
+    const { filename, originalName } = request.body;
+    
+    if (!filename) {
+      return reply.code(400).send({ error: 'filename is required' });
+    }
+
+    // Check if MinIO is configured
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'OSC not configured for transcoding' });
+    }
+
+    // Get MinIO configuration
+    let minioConfig;
+    try {
+      minioConfig = await oscClient.getMinioInstance('schedulerstorage');
+    } catch (error) {
+      return reply.code(500).send({ error: 'MinIO instance not available for transcoding' });
+    }
+
+    // Generate job name and output path (alphanumeric only)
+    const timestamp = Date.now();
+    const jobName = `transcode${timestamp}`;
+    const outputPath = `${filename.replace(/\.[^/.]+$/, "")}`; // Remove extension for output folder
+    
+    // Create transcoding job
+    const transcodingJob = await oscClient.createTranscodingJob(
+      jobName,
+      filename,
+      outputPath,
+      minioConfig
+    );
+
+    // Generate the expected HLS URL after transcoding
+    const hlsUrl = `${minioConfig.endpoint}/output/${outputPath}/master.m3u8`;
+
+    return {
+      success: true,
+      jobId: transcodingJob.jobId,
+      status: transcodingJob.status,
+      hlsUrl: hlsUrl,
+      inputFile: filename,
+      outputPath: outputPath
+    };
+
+  } catch (error) {
+    console.error('Transcoding job creation failed:', error);
+    reply.code(500).send({ error: 'Failed to create transcoding job' });
+  }
+});
+
+fastify.get('/api/transcode-status/:jobId', async (request, reply) => {
+  try {
+    const { jobId } = request.params;
+
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'OSC not configured' });
+    }
+
+    const jobStatus = await oscClient.getTranscodingJobStatus(jobId);
+    
+    return {
+      jobId: jobStatus.jobId,
+      status: jobStatus.status,
+      oscStatus: jobStatus.oscStatus
+    };
+
+  } catch (error) {
+    console.error('Failed to get transcoding status:', error);
+    reply.code(500).send({ error: 'Failed to get transcoding status' });
+  }
+});
+
+fastify.delete('/api/transcode-job/:jobId', async (request, reply) => {
+  try {
+    const { jobId } = request.params;
+
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'OSC not configured' });
+    }
+
+    const result = await oscClient.deleteTranscodingJob(jobId);
+    
+    return result;
+
+  } catch (error) {
+    console.error('Failed to delete transcoding job:', error);
+    reply.code(500).send({ error: 'Failed to delete transcoding job' });
+  }
+});
+
 // Schedule endpoints
 fastify.get('/api/channels/:channelId/schedule', async (request, reply) => {
   try {
@@ -435,6 +692,51 @@ fastify.post('/api/vods/detect-duration', async (request, reply) => {
     return { durationMs, durationSeconds: Math.round(durationMs / 1000) };
   } catch (error) {
     reply.code(500).send({ error: 'Failed to detect duration' });
+  }
+});
+
+// MinIO management endpoints
+fastify.post('/api/setup-minio', async (request, reply) => {
+  try {
+    const { instanceName, username, password } = request.body;
+    const name = instanceName ? instanceName.replace(/[^a-z0-9]/g, '') : 'schedulerstorage';
+    const user = username || 'admin';
+    
+    const result = await setupMinioForScheduler(name, user, password);
+    
+    if (!result) {
+      return reply.code(400).send({ error: 'OSC not configured' });
+    }
+    
+    return reply.send({
+      success: true,
+      instance: result.minioConfig.instanceName,
+      endpoint: result.minioConfig.endpoint,
+      buckets: result.bucketResults
+    });
+  } catch (error) {
+    console.error('Failed to setup MinIO:', error);
+    reply.code(500).send({ error: 'Failed to setup MinIO instance' });
+  }
+});
+
+fastify.get('/api/minio-config', async (request, reply) => {
+  try {
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'OSC not configured' });
+    }
+    
+    const instanceName = 'schedulerstorage';
+    const config = await oscClient.getMinioInstance(instanceName);
+    
+    return reply.send({
+      instance: config.instanceName,
+      endpoint: config.endpoint,
+      region: config.region
+    });
+  } catch (error) {
+    console.error('Failed to get MinIO config:', error);
+    reply.code(404).send({ error: 'MinIO instance not found' });
   }
 });
 
@@ -726,6 +1028,15 @@ const start = async () => {
   try {
     // Seed database with sample VODs if empty
     await seedDatabase();
+
+    // Setup MinIO instance if OSC_ACCESS_TOKEN is provided
+    if (process.env.OSC_ACCESS_TOKEN) {
+      try {
+        await setupMinioForScheduler();
+      } catch (error) {
+        console.warn('MinIO setup failed during startup:', error.message);
+      }
+    }
 
     await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
     console.log(`Server listening on http://localhost:${process.env.PORT || 3000}`);
