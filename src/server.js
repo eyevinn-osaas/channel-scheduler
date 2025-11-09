@@ -1,6 +1,16 @@
+// Configure body limit based on environment - keep small for chunked uploads
+const getBodyLimit = () => {
+  if (process.env.MAX_UPLOAD_SIZE) {
+    return parseInt(process.env.MAX_UPLOAD_SIZE);
+  }
+  // Keep small to work with reverse proxies, chunked upload handles large files
+  return 10 * 1024 * 1024; // 10MB default
+};
+
 const fastify = require('fastify')({ 
   logger: true,
-  bodyLimit: 100 * 1024 * 1024 * 1024 // 100GB body limit
+  bodyLimit: getBodyLimit(),
+  requestTimeout: 300000 // 5 minute timeout for chunk uploads
 });
 const { PrismaClient } = require('@prisma/client');
 const path = require('path');
@@ -77,15 +87,24 @@ fastify.register(require('@fastify/static'), {
   prefix: '/'
 });
 
-fastify.register(require('@fastify/multipart'), {
-  limits: {
-    fileSize: 100 * 1024 * 1024 * 1024, // 100GB max file size
+// Configure multipart limits for chunked uploads
+const getMultipartLimits = () => {
+  const maxChunkSize = process.env.MAX_CHUNK_SIZE ? 
+    parseInt(process.env.MAX_CHUNK_SIZE) : 
+    8 * 1024 * 1024; // Default 8MB max chunk size
+
+  return {
+    fileSize: maxChunkSize, // Max per chunk
     files: 1,
-    fieldNameSize: 100,
-    fieldSize: 100,
+    fieldNameSize: 200,
+    fieldSize: 1000,    
     fields: 10,
     headerPairs: 2000
-  }
+  };
+};
+
+fastify.register(require('@fastify/multipart'), {
+  limits: getMultipartLimits()
 });
 
 // Register webhook routes
@@ -341,7 +360,206 @@ fastify.delete('/api/vods/:id', async (request, reply) => {
   }
 });
 
-// File upload endpoint for VODs
+// Chunked upload endpoint for large files  
+// Store for tracking multipart uploads
+const multipartUploads = new Map();
+
+// Initialize multipart upload
+fastify.post('/api/upload-init', async (request, reply) => {
+  try {
+    const { filename } = request.body;
+    
+    if (!filename) {
+      return reply.code(400).send({ error: 'Filename is required' });
+    }
+
+    // Check if MinIO is configured
+    if (!oscClient.isConfigured()) {
+      return reply.code(400).send({ error: 'MinIO not configured. OSC_ACCESS_TOKEN required.' });
+    }
+
+    // Get MinIO configuration
+    let minioConfig;
+    try {
+      minioConfig = await oscClient.getMinioInstance('schedulerstorage');
+    } catch (error) {
+      return reply.code(500).send({ error: 'MinIO instance not available' });
+    }
+
+    // Configure S3 client for MinIO
+    const AWS = require('aws-sdk');
+    const s3 = new AWS.S3({
+      endpoint: minioConfig.endpoint,
+      accessKeyId: minioConfig.rootUser,
+      secretAccessKey: minioConfig.rootPassword,
+      region: minioConfig.region,
+      s3ForcePathStyle: true,
+      signatureVersion: 'v4'
+    });
+
+    // Create unique filename for this upload
+    const timestamp = Date.now();
+    const uploadId = `${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
+    const finalFilename = `${timestamp}-${filename}`;
+
+    // Initialize multipart upload in S3
+    const multipartParams = {
+      Bucket: 'input',
+      Key: finalFilename,
+      ContentType: 'application/octet-stream'
+    };
+
+    const multipartUpload = await s3.createMultipartUpload(multipartParams).promise();
+    
+    // Store upload info for tracking
+    multipartUploads.set(uploadId, {
+      s3UploadId: multipartUpload.UploadId,
+      filename: finalFilename,
+      originalName: filename,
+      bucket: 'input',
+      parts: [],
+      s3Client: s3
+    });
+
+    return reply.send({
+      success: true,
+      uploadId,
+      s3UploadId: multipartUpload.UploadId,
+      filename: finalFilename
+    });
+  } catch (error) {
+    console.error('Failed to initialize upload:', error);
+    reply.code(500).send({ error: 'Failed to initialize upload' });
+  }
+});
+
+// Upload individual chunk using S3 multipart
+fastify.post('/api/upload-chunk', async (request, reply) => {
+  try {
+    const data = await request.file();
+    
+    if (!data) {
+      return reply.code(400).send({ error: 'No chunk uploaded' });
+    }
+
+    // Extract fields using a more robust approach
+    let chunkIndex, totalChunks, uploadId;
+    
+    // Parse fields from the multipart data
+    if (data.fields) {
+      const fields = data.fields;
+      
+      // Handle different field formats
+      const getField = (name) => {
+        const field = fields[name];
+        if (!field) return undefined;
+        return field.value !== undefined ? field.value : field;
+      };
+      
+      chunkIndex = parseInt(getField('chunkIndex'));
+      totalChunks = parseInt(getField('totalChunks'));
+      uploadId = getField('uploadId');
+    }
+    
+    if (chunkIndex === undefined || isNaN(chunkIndex) || !totalChunks || isNaN(totalChunks) || !uploadId) {
+      return reply.code(400).send({ 
+        error: 'Missing required chunk metadata',
+        received: { chunkIndex, totalChunks, uploadId }
+      });
+    }
+
+    // Get upload info
+    const uploadInfo = multipartUploads.get(uploadId);
+    if (!uploadInfo) {
+      return reply.code(400).send({ error: 'Upload not initialized. Call /api/upload-init first.' });
+    }
+
+    // Upload this part to S3 multipart upload
+    const partNumber = chunkIndex + 1; // S3 part numbers are 1-based
+    
+    // Convert FileStream to Buffer for AWS SDK
+    const chunks = [];
+    for await (const chunk of data.file) {
+      chunks.push(chunk);
+    }
+    const chunkBuffer = Buffer.concat(chunks);
+    
+    const uploadPartParams = {
+      Bucket: uploadInfo.bucket,
+      Key: uploadInfo.filename,
+      PartNumber: partNumber,
+      UploadId: uploadInfo.s3UploadId,
+      Body: chunkBuffer
+    };
+
+    const partResult = await uploadInfo.s3Client.uploadPart(uploadPartParams).promise();
+    
+    // Store part info
+    uploadInfo.parts[chunkIndex] = {
+      ETag: partResult.ETag,
+      PartNumber: partNumber
+    };
+    
+    // If this is the last chunk, complete the multipart upload
+    if (chunkIndex + 1 === totalChunks) {
+      // Ensure all parts are present
+      const completeParts = [];
+      for (let i = 0; i < totalChunks; i++) {
+        if (!uploadInfo.parts[i]) {
+          return reply.code(400).send({ error: `Missing part ${i}` });
+        }
+        completeParts.push(uploadInfo.parts[i]);
+      }
+
+      // Complete the multipart upload
+      const completeParams = {
+        Bucket: uploadInfo.bucket,
+        Key: uploadInfo.filename,
+        UploadId: uploadInfo.s3UploadId,
+        MultipartUpload: {
+          Parts: completeParts
+        }
+      };
+
+      const result = await uploadInfo.s3Client.completeMultipartUpload(completeParams).promise();
+      
+      // Clean up tracking data
+      multipartUploads.delete(uploadId);
+
+      // Verify final file
+      const headResult = await uploadInfo.s3Client.headObject({
+        Bucket: uploadInfo.bucket,
+        Key: uploadInfo.filename
+      }).promise();
+      
+      return reply.send({
+        success: true,
+        filename: uploadInfo.filename,
+        originalName: uploadInfo.originalName,
+        size: headResult.ContentLength,
+        url: result.Location,
+        s3Key: result.Key,
+        isComplete: true,
+        chunked: true
+      });
+    }
+    
+    // Return progress for non-final chunks
+    return reply.send({
+      success: true,
+      chunkIndex,
+      uploaded: chunkIndex + 1,
+      total: totalChunks,
+      isComplete: false
+    });
+    
+  } catch (error) {
+    console.error('Chunk upload failed:', error);
+    reply.code(500).send({ error: 'Failed to upload chunk: ' + error.message });
+  }
+});
+
+// File upload endpoint for VODs (small files and fallback)
 fastify.post('/api/upload-file', async (request, reply) => {
   try {
     // Check if MinIO is configured
@@ -364,15 +582,32 @@ fastify.post('/api/upload-file', async (request, reply) => {
       return reply.code(500).send({ error: 'MinIO instance not available. Please set up MinIO first.' });
     }
 
-    // Configure S3 client for MinIO
+    // Configure S3 client for MinIO with smaller chunk sizes
     const AWS = require('aws-sdk');
+    
+    // Configure multipart upload options for deployment environments
+    const partSize = process.env.S3_PART_SIZE ? 
+      parseInt(process.env.S3_PART_SIZE) : 
+      5 * 1024 * 1024; // Default 5MB parts
+    
+    const queueSize = process.env.S3_QUEUE_SIZE ? 
+      parseInt(process.env.S3_QUEUE_SIZE) : 
+      4; // Default 4 concurrent uploads
+    
     const s3 = new AWS.S3({
       endpoint: minioConfig.endpoint,
       accessKeyId: minioConfig.rootUser,
       secretAccessKey: minioConfig.rootPassword,
       region: minioConfig.region,
       s3ForcePathStyle: true,
-      signatureVersion: 'v4'
+      signatureVersion: 'v4',
+      // Configure for smaller chunks
+      maxRetries: 3,
+      retryDelayOptions: {
+        customBackoff: function(retryCount) {
+          return Math.pow(2, retryCount) * 1000;
+        }
+      }
     });
 
     // Generate unique filename
@@ -380,7 +615,7 @@ fastify.post('/api/upload-file', async (request, reply) => {
     const originalName = data.filename || 'uploaded-file';
     const filename = `${timestamp}-${originalName}`;
 
-    // Use managed upload for better large file handling
+    // Use managed upload with smaller parts for deployment environments
     const uploadParams = {
       Bucket: 'input',
       Key: filename,
@@ -388,8 +623,14 @@ fastify.post('/api/upload-file', async (request, reply) => {
       ContentType: data.mimetype || 'application/octet-stream'
     };
 
-    // Use managed upload with progress tracking
-    const upload = s3.upload(uploadParams);
+    // Configure multipart upload options
+    const uploadOptions = {
+      partSize: partSize,
+      queueSize: queueSize
+    };
+
+    // Use managed upload with progress tracking and smaller chunks
+    const upload = s3.upload(uploadParams, uploadOptions);
     
     upload.on('httpUploadProgress', (progress) => {
       // Progress tracking for potential future use
@@ -400,9 +641,11 @@ fastify.post('/api/upload-file', async (request, reply) => {
     const result = await upload.promise();
 
     // Verify the file is fully uploaded and accessible
+    console.log(`Verifying upload completion for ${filename}...`);
     let retries = 0;
-    const maxRetries = 10;
+    const maxRetries = 15; // Increased for larger files
     let lastSize = 0;
+    let stableChecks = 0;
     
     while (retries < maxRetries) {
       try {
@@ -411,17 +654,26 @@ fastify.post('/api/upload-file', async (request, reply) => {
           Key: filename
         }).promise();
         
-        // Check if file size is stable (not changing between checks)
-        if (headResult.ContentLength > 0 && headResult.ContentLength === lastSize) {
-          break;
-        }
+        console.log(`File size check ${retries + 1}: ${headResult.ContentLength} bytes`);
         
-        lastSize = headResult.ContentLength;
+        // Check if file size is stable (same size for 2 consecutive checks)
+        if (headResult.ContentLength > 0) {
+          if (headResult.ContentLength === lastSize) {
+            stableChecks++;
+            if (stableChecks >= 2) {
+              console.log(`Upload verified: ${headResult.ContentLength} bytes stable`);
+              break;
+            }
+          } else {
+            stableChecks = 0; // Reset if size changed
+          }
+          lastSize = headResult.ContentLength;
+        }
       } catch (error) {
-        // File not yet available, continue retrying
+        console.log(`File not yet available, retrying... (${retries + 1}/${maxRetries})`);
       }
       
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for larger files
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for multipart upload completion
       retries++;
     }
     
@@ -1030,22 +1282,97 @@ fastify.get('/api/channels/:id/status', async (request, reply) => {
   }
 });
 
+// Global flag to track setup state
+let isSettingUpStorage = false;
+
+// Setup page HTML
+const setupPageHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setting up Storage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .progress {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+    <script>
+        setTimeout(() => {
+            window.location.reload();
+        }, 10000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>Setting up storage instance</h2>
+        <div class="spinner"></div>
+        <p>Creating MinIO storage and buckets...</p>
+        <div class="progress">This may take a few moments</div>
+        <p><small>This page will automatically refresh in 10 seconds</small></p>
+    </div>
+</body>
+</html>`;
+
+// Global preHandler for setup mode
+fastify.addHook('preHandler', async (request, reply) => {
+  if (isSettingUpStorage && !request.url.startsWith('/api/')) {
+    reply.type('text/html').send(setupPageHtml);
+  }
+});
+
 const start = async () => {
   try {
+    // Start server first
+    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
+    console.log(`Server listening on http://localhost:${process.env.PORT || 3000}`);
+    
     // Seed database with sample VODs if empty
     await seedDatabase();
 
     // Setup MinIO instance if OSC_ACCESS_TOKEN is provided
     if (process.env.OSC_ACCESS_TOKEN) {
+      isSettingUpStorage = true;
       try {
         await setupMinioForScheduler();
+        console.log('MinIO storage setup completed');
       } catch (error) {
         console.warn('MinIO setup failed during startup:', error.message);
       }
+      isSettingUpStorage = false;
     }
 
-    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
-    console.log(`Server listening on http://localhost:${process.env.PORT || 3000}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

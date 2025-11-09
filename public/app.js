@@ -1213,50 +1213,12 @@ class ChannelScheduler {
         this.disableVODSaveButton();
 
         try {
-            const formData = new FormData();
-            formData.append('file', file);
+            // Use chunked upload for files larger than 8MB
+            const chunkThreshold = 8 * 1024 * 1024; // 8MB
+            const result = file.size > chunkThreshold 
+                ? await this.uploadFileChunked(file)
+                : await this.uploadFileDirect(file);
 
-            // Create XMLHttpRequest for progress tracking
-            const xhr = new XMLHttpRequest();
-            const response = await new Promise((resolve, reject) => {
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percentComplete = Math.round((e.loaded / e.total) * 100);
-                        document.getElementById('upload-progress-bar').style.width = percentComplete + '%';
-                        document.getElementById('upload-status').textContent = `Uploading... ${percentComplete}%`;
-                    }
-                });
-
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            resolve({
-                                ok: true,
-                                json: () => Promise.resolve(JSON.parse(xhr.responseText))
-                            });
-                        } catch (e) {
-                            reject(new Error('Invalid JSON response'));
-                        }
-                    } else {
-                        reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
-                    }
-                });
-
-                xhr.addEventListener('error', () => {
-                    reject(new Error('Network error during upload'));
-                });
-
-                xhr.open('POST', '/api/upload-file');
-                xhr.send(formData);
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Upload failed');
-            }
-
-            const result = await response.json();
-            
             // Show success state
             document.getElementById('upload-progress').classList.add('hidden');
             document.getElementById('upload-success').classList.remove('hidden');
@@ -1308,6 +1270,145 @@ class ChannelScheduler {
                 `;
             }, 3000);
         }
+    }
+
+    async uploadFileDirect(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Create XMLHttpRequest for progress tracking
+        const xhr = new XMLHttpRequest();
+        const response = await new Promise((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        document.getElementById('upload-progress-bar').style.width = percentComplete + '%';
+                        document.getElementById('upload-status').textContent = `Uploading... ${percentComplete}%`;
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            resolve({
+                                ok: true,
+                                json: () => Promise.resolve(JSON.parse(xhr.responseText))
+                            });
+                        } catch (e) {
+                            reject(new Error('Invalid JSON response'));
+                        }
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error('Network error during upload'));
+                });
+
+                xhr.open('POST', '/api/upload-file');
+                xhr.send(formData);
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Upload failed');
+            }
+
+            return await response.json();
+    }
+
+    async uploadFileChunked(file) {
+        const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+        const totalChunks = Math.ceil(file.size / chunkSize);
+        
+        console.log(`Starting chunked upload: ${totalChunks} chunks of ${chunkSize} bytes`);
+        
+        // Step 1: Initialize multipart upload
+        const initResponse = await fetch('/api/upload-init', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filename: file.name
+            })
+        });
+
+        if (!initResponse.ok) {
+            const errorData = await initResponse.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(`Failed to initialize upload: ${errorData.error}`);
+        }
+
+        const initResult = await initResponse.json();
+        const uploadId = initResult.uploadId;
+        
+        console.log(`Initialized multipart upload with ID: ${uploadId}`);
+        
+        let uploadedChunks = 0;
+
+        // Step 2: Upload chunks using S3 multipart upload
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * chunkSize;
+            const end = Math.min(start + chunkSize, file.size);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            // Add fields first, then file (some servers prefer this order)
+            formData.append('chunkIndex', chunkIndex.toString());
+            formData.append('totalChunks', totalChunks.toString());
+            formData.append('uploadId', uploadId);
+            formData.append('file', chunk);
+            
+            console.log(`Uploading chunk ${chunkIndex}/${totalChunks} for ${file.name}`);
+
+            // Upload chunk with retry logic
+            let retries = 3;
+            let success = false;
+
+            while (retries > 0 && !success) {
+                try {
+                    const response = await fetch('/api/upload-chunk', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                        console.error(`Chunk ${chunkIndex} error response:`, errorData);
+                        throw new Error(`Chunk ${chunkIndex} upload failed: ${response.status} - ${errorData.error || 'Unknown error'}`);
+                    }
+
+                    const result = await response.json();
+                    uploadedChunks++;
+                    
+                    // Update progress
+                    const overallProgress = Math.round((uploadedChunks / totalChunks) * 100);
+                    document.getElementById('upload-progress-bar').style.width = overallProgress + '%';
+                    document.getElementById('upload-status').textContent = `Uploading... ${overallProgress}% (${uploadedChunks}/${totalChunks} chunks)`;
+                    
+                    // If this was the final chunk, return the complete result
+                    if (result.isComplete) {
+                        console.log('Chunked upload completed:', result);
+                        return result;
+                    }
+                    
+                    success = true;
+                } catch (error) {
+                    retries--;
+                    console.warn(`Chunk ${chunkIndex} upload attempt failed:`, error);
+                    
+                    if (retries === 0) {
+                        throw new Error(`Failed to upload chunk ${chunkIndex} after 3 attempts: ${error.message}`);
+                    }
+                    
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+        }
+        
+        throw new Error('Chunked upload completed but no final result received');
     }
 
     async startTranscoding(filename, originalName) {
