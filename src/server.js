@@ -391,6 +391,12 @@ fastify.post('/api/upload-file', async (request, reply) => {
     // Use managed upload with progress tracking
     const upload = s3.upload(uploadParams);
     
+    upload.on('httpUploadProgress', (progress) => {
+      // Progress tracking for potential future use
+      const percentage = Math.round((progress.loaded / progress.total) * 100);
+      console.log(`Upload progress: ${percentage}%`);
+    });
+    
     const result = await upload.promise();
 
     // Verify the file is fully uploaded and accessible

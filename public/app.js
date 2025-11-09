@@ -1163,6 +1163,27 @@ class ChannelScheduler {
             <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
             <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
         `;
+        
+        // Re-enable save button
+        this.enableVODSaveButton();
+    }
+
+    disableVODSaveButton() {
+        const saveBtn = document.getElementById('vod-save-btn');
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+            saveBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+        }
+    }
+
+    enableVODSaveButton() {
+        const saveBtn = document.getElementById('vod-save-btn');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+            saveBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+        }
     }
 
     async loadVODForEdit(vodId) {
@@ -1185,18 +1206,48 @@ class ChannelScheduler {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Show upload progress
+        // Show upload progress and disable save button
         document.getElementById('upload-area').classList.add('hidden');
         document.getElementById('upload-progress').classList.remove('hidden');
         document.getElementById('upload-success').classList.add('hidden');
+        this.disableVODSaveButton();
 
         try {
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await fetch('/api/upload-file', {
-                method: 'POST',
-                body: formData
+            // Create XMLHttpRequest for progress tracking
+            const xhr = new XMLHttpRequest();
+            const response = await new Promise((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        document.getElementById('upload-progress-bar').style.width = percentComplete + '%';
+                        document.getElementById('upload-status').textContent = `Uploading... ${percentComplete}%`;
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            resolve({
+                                ok: true,
+                                json: () => Promise.resolve(JSON.parse(xhr.responseText))
+                            });
+                        } catch (e) {
+                            reject(new Error('Invalid JSON response'));
+                        }
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error('Network error during upload'));
+                });
+
+                xhr.open('POST', '/api/upload-file');
+                xhr.send(formData);
             });
 
             if (!response.ok) {
@@ -1224,19 +1275,21 @@ class ChannelScheduler {
             const fileExt = result.originalName.toLowerCase().substring(result.originalName.lastIndexOf('.'));
             
             if (videoExtensions.includes(fileExt)) {
-                // Start transcoding for video files
+                // Start transcoding for video files (save button stays disabled)
                 await this.startTranscoding(result.filename, result.originalName);
             } else if (result.url) {
-                // For HLS files or other formats, use the direct URL
+                // For HLS files or other formats, use the direct URL and re-enable save button
                 document.getElementById('vod-hls-url').value = result.url;
+                this.enableVODSaveButton();
             }
 
         } catch (error) {
             console.error('Upload failed:', error);
             
-            // Show error state
+            // Show error state and re-enable save button
             document.getElementById('upload-progress').classList.add('hidden');
             document.getElementById('upload-area').classList.remove('hidden');
+            this.enableVODSaveButton();
             
             // Show error message
             const uploadArea = document.getElementById('upload-area');
@@ -1292,12 +1345,13 @@ class ChannelScheduler {
         } catch (error) {
             console.error('Transcoding failed:', error);
             
-            // Show error in upload success area
+            // Show error in upload success area and re-enable save button
             const uploadSuccess = document.getElementById('upload-success');
             uploadSuccess.innerHTML = `
                 <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i>
                 <span class="text-red-600">Transcoding failed: ${error.message}</span>
             `;
+            this.enableVODSaveButton();
         }
     }
 
@@ -1332,8 +1386,9 @@ class ChannelScheduler {
                     <span class="text-green-600">Transcoding completed!</span>
                 `;
                 
-                // Populate HLS URL field
+                // Populate HLS URL field and re-enable save button
                 document.getElementById('vod-hls-url').value = this.currentTranscodingJob.hlsUrl;
+                this.enableVODSaveButton();
                 
                 // Clear transcoding job
                 this.currentTranscodingJob = null;
@@ -1344,6 +1399,8 @@ class ChannelScheduler {
                     <span class="text-red-600">Transcoding failed</span>
                 `;
                 
+                // Re-enable save button on failure (user can still save with original file)
+                this.enableVODSaveButton();
                 this.currentTranscodingJob = null;
                 
             } else if (result.status === 'suspended') {
@@ -1352,6 +1409,8 @@ class ChannelScheduler {
                     <span class="text-yellow-600">Transcoding suspended</span>
                 `;
                 
+                // Re-enable save button on suspension
+                this.enableVODSaveButton();
                 this.currentTranscodingJob = null;
                 
             } else {
@@ -1368,6 +1427,8 @@ class ChannelScheduler {
                 <span class="text-red-600">Error checking transcoding status</span>
             `;
             
+            // Re-enable save button on error
+            this.enableVODSaveButton();
             this.currentTranscodingJob = null;
         }
     }

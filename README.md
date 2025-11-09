@@ -10,6 +10,8 @@ A web-based interface for scheduling and managing video content for [Eyevinn Cha
 - **Real-time Status**: Live webhook-based status monitoring of channel engines
 - **Channel Management**: Create and manage multiple TV channels with integrated Channel Engine management
 - **OSC Integration**: Native integration with Open Source Cloud (OSC) for automatic Channel Engine lifecycle management
+- **File Upload & Transcoding**: Upload video files and automatically transcode to HLS format for broadcasting
+- **S3 Storage Integration**: Automated MinIO S3 storage setup with input/output buckets for media processing
 - **VOD Library**: Maintain a library of video on demand content with searchable sidebar interface
 - **Schedule Management**: Add, reorder, and time content for automatic playback with intelligent looping
 - **Webhook Integration**: Seamless integration with Channel Engine webhook system
@@ -90,6 +92,8 @@ With OSC integration enabled, you can:
 - Automatically detect and link existing engines
 - Monitor engine status and stream URLs
 - Delete engines when removing channels
+- Upload and transcode video files using automated S3 storage
+- Access MinIO storage buckets for media management
 
 For webhook functionality, you'll need a publicly accessible URL. Use ngrok for development:
 
@@ -177,6 +181,20 @@ Access the dedicated **Engines** tab to:
 
 ### 2. Add VOD Content
 
+#### Option A: Upload and Transcode Video Files
+
+1. Switch to the **VODs** tab
+2. Click **"Add VOD"**
+3. Use the **File Upload** section to:
+   - Select a video file (MP4, MOV, AVI, etc.)
+   - Upload with real-time progress tracking
+   - Automatically transcode to HLS format using Eyevinn FFmpeg S3
+   - Monitor transcoding progress with live status updates
+4. Enter title and description
+5. The HLS URL is automatically configured after transcoding completes
+
+#### Option B: Add Existing HLS Content
+
 1. Switch to the **VODs** tab
 2. Click **"Add VOD"**
 3. Enter title, description, and HLS URL
@@ -201,6 +219,38 @@ Access the dedicated **Engines** tab to:
 - **Webhook Activity**: Status updates automatically based on webhook calls from Channel Engine
 - **Channel Engines Tab**: Dedicated view for monitoring all engine instances with stream previews
 
+## Upload and Transcoding Workflow
+
+The Channel Scheduler provides an integrated media pipeline for processing video files:
+
+### Automatic S3 Storage Setup
+
+When OSC integration is enabled, the system automatically:
+- Creates a MinIO S3-compatible storage instance (`schedulerstorage`)
+- Sets up `input` and `output` buckets with appropriate permissions
+- Configures public read access for the output bucket
+
+### File Upload Process
+
+1. **Upload Interface**: Drag-and-drop or click to select video files
+2. **Progress Tracking**: Real-time upload progress with visual indicators
+3. **Large File Support**: Handles files up to 100GB with streaming upload
+4. **Format Support**: MP4, MOV, AVI, MKV, and other common video formats
+
+### Automated Transcoding
+
+- **HLS Conversion**: Files are automatically transcoded to HLS format for broadcasting
+- **Eyevinn FFmpeg S3**: Uses the Eyevinn FFmpeg S3 service for high-quality transcoding
+- **Status Monitoring**: Real-time transcoding progress with completion notifications
+- **Output Management**: Transcoded files are stored in the public output bucket
+
+### Integration Benefits
+
+- **Seamless Workflow**: Upload → Transcode → Schedule → Broadcast in one interface
+- **No External Dependencies**: All processing happens within your OSC environment
+- **Broadcast-Ready Output**: HLS segments optimized for Channel Engine compatibility
+- **Automatic Cleanup**: Failed jobs and temporary files are managed automatically
+
 ## API Endpoints
 
 ### Webhook Endpoints
@@ -223,6 +273,18 @@ Access the dedicated **Engines** tab to:
 - `POST /api/channels/:id/channel-engine` - Create Channel Engine for channel
 - `DELETE /api/channels/:id/channel-engine` - Delete Channel Engine instance
 - `POST /api/channels/:id/channel-engine/link` - Link existing engine to channel
+
+### Upload and Transcoding API
+
+- `POST /api/upload-file` - Upload video file to S3 storage with progress tracking
+- `POST /api/transcode-file` - Create transcoding job for uploaded file
+- `GET /api/transcode-status/:jobId` - Get transcoding job status
+- `DELETE /api/transcode-job/:jobId` - Delete transcoding job
+
+### Storage Management API
+
+- `POST /api/setup-minio` - Create MinIO instance with input/output buckets
+- `GET /api/minio-config` - Get MinIO instance configuration
 
 ## Development
 
@@ -285,6 +347,33 @@ npx prisma migrate reset
 2. **Engine creation fails**: Check OSC account limits and permissions
 3. **Stream not playing in preview**: Verify the HLS URL is accessible and the engine is running
 4. **Engines not listed**: Ensure OSC_ACCESS_TOKEN is configured and valid
+
+### Upload and Transcoding Issues
+
+1. **Upload fails or incomplete**: 
+   - Check file size (max 100GB supported)
+   - Verify network stability for large files
+   - Ensure MinIO storage is properly configured
+
+2. **Transcoding fails**:
+   - Verify input file format is supported (MP4, MOV, AVI, MKV)
+   - Check OSC account limits for transcoding services
+   - Ensure file was completely uploaded before transcoding started
+
+3. **"MinIO not configured" error**:
+   - Add `OSC_ACCESS_TOKEN` to environment variables
+   - Run setup-minio API endpoint or restart application
+   - Check OSC account permissions for MinIO service
+
+4. **Transcoding never completes**:
+   - Monitor job status via API or browser console
+   - Large files may take significant time to process
+   - Check if transcoding service instance is running in OSC
+
+5. **Upload progress not showing**:
+   - Ensure modern browser with XMLHttpRequest support
+   - Check network connectivity during upload
+   - Large files may show chunked progress updates
 
 ### Database Issues
 

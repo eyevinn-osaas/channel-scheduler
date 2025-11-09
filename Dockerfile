@@ -53,8 +53,18 @@ mkdir -p "$DATA_DIR"\n\
 \n\
 # Initialize database if it doesn'\''t exist\n\
 if [ ! -f "${DATA_DIR}/prod.db" ]; then\n\
+  echo "Starting health server during database initialization..."\n\
+  # Start health server in background\n\
+  node /app/src/healthServer.js &\n\
+  HEALTH_PID=$!\n\
+  \n\
   echo "Initializing database..."\n\
   npx prisma db push\n\
+  \n\
+  # Stop health server\n\
+  echo "Database initialization complete, stopping health server..."\n\
+  kill $HEALTH_PID 2>/dev/null || true\n\
+  wait $HEALTH_PID 2>/dev/null || true\n\
 fi\n\
 \n\
 # Start the application\n\
