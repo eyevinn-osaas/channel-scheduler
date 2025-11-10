@@ -4,6 +4,7 @@ class ChannelScheduler {
         this.editingChannelId = null;
         this.editingVodId = null;
         this.editingScheduleId = null;
+        this.oscConfigured = false;
         this.init();
     }
 
@@ -13,6 +14,7 @@ class ChannelScheduler {
         this.loadChannels();
         this.loadVODs();
         this.loadGlobalWebhookUrl();
+        this.checkOSCStatus();
     }
 
     bindEvents() {
@@ -1848,6 +1850,52 @@ class ChannelScheduler {
             console.error('Error loading channel status:', error);
         }
     }
+
+    async checkOSCStatus() {
+        try {
+            const response = await fetch('/api/osc-status');
+            const status = await response.json();
+            
+            this.oscConfigured = status.configured;
+            this.updateUIForOSCStatus(status);
+        } catch (error) {
+            console.error('Error checking OSC status:', error);
+            this.oscConfigured = false;
+            this.updateUIForOSCStatus({ configured: false, features: {} });
+        }
+    }
+
+    updateUIForOSCStatus(status) {
+        // Hide/show upload section in VOD modal
+        const uploadSection = document.querySelector('#vod-modal .mb-4:nth-child(3)'); // Upload section
+        if (uploadSection && uploadSection.textContent.includes('Upload Video File')) {
+            if (!status.features.upload) {
+                uploadSection.style.display = 'none';
+            } else {
+                uploadSection.style.display = 'block';
+            }
+        }
+
+        // Update HLS URL label to indicate it's required when upload is disabled
+        const hlsInput = document.getElementById('vod-hls-url');
+        const hlsLabel = hlsInput ? hlsInput.closest('.mb-4').querySelector('label') : null;
+        
+        if (hlsLabel) {
+            if (!status.features.upload) {
+                hlsLabel.innerHTML = 'HLS URL <span class="text-red-500">*</span>';
+                document.getElementById('vod-hls-url').required = true;
+            } else {
+                hlsLabel.innerHTML = `
+                    HLS URL
+                    <span class="text-xs text-gray-500">(or use uploaded file above)</span>
+                `;
+                document.getElementById('vod-hls-url').required = false;
+            }
+        }
+
+        // OSC configuration handled silently - no banner needed
+    }
+
 
 }
 

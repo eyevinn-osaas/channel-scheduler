@@ -1345,6 +1345,22 @@ const setupPageHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Check OSC configuration status
+fastify.get('/api/osc-status', async (request, reply) => {
+  try {
+    return {
+      configured: oscClient.isConfigured(),
+      features: {
+        upload: oscClient.isConfigured(),
+        transcode: oscClient.isConfigured(),
+        channelEngines: oscClient.isConfigured()
+      }
+    };
+  } catch (error) {
+    reply.code(500).send({ error: 'Failed to check OSC status' });
+  }
+});
+
 // Global preHandler for setup mode
 fastify.addHook('preHandler', async (request, reply) => {
   if (isSettingUpStorage && !request.url.startsWith('/api/')) {

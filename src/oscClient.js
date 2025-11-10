@@ -369,21 +369,37 @@ class OSCClient {
         try {
             console.log(`Creating transcoding job: ${jobName}`);
 
-            // FFmpeg command to transcode to HLS
+            // FFmpeg command to transcode to demuxed HLS (separate audio/video streams)
             const cmdLineArgs = [
                 `-i s3://input/${inputS3Path}`,
+                
+                // Video stream settings
+                '-map 0:v:0',
                 '-c:v libx264',
-                '-preset medium',
+                '-preset medium', 
                 '-crf 23',
+                '-g 72', // GOP size for 6-second segments at 12fps
+                '-keyint_min 72',
+                '-sc_threshold 0', // Disable scene change detection
+                
+                // Audio stream settings  
+                '-map 0:a:0',
                 '-c:a aac',
                 '-ar 48000',
                 '-b:a 128k',
+                '-ac 2', // Stereo audio
+                
+                // HLS output settings
                 '-f hls',
                 '-hls_time 6',
                 '-hls_list_size 0',
                 '-hls_flags independent_segments',
-                `-hls_segment_filename s3://output/${outputS3Path}/segment_%03d.ts`,
-                `s3://output/${outputS3Path}/master.m3u8`
+                
+                // Demux streams - separate audio and video
+                '-var_stream_map "v:0,a:0"',
+                '-master_pl_name master.m3u8',
+                `-hls_segment_filename s3://output/${outputS3Path}/stream_%v/segment_%03d.ts`,
+                `s3://output/${outputS3Path}/stream_%v/playlist.m3u8`
             ].join(' ');
 
             // Try using the dedicated FFmpeg S3 service if available

@@ -76,6 +76,12 @@ PORT=3000
 PUBLIC_URL="http://localhost:3000"
 DATA_DIR="./data"
 OSC_ACCESS_TOKEN="your-osc-access-token"  # Optional: For automated Channel Engine management
+
+# Upload Configuration (Optional)
+MAX_UPLOAD_SIZE="10485760"      # 10MB max request body size (default: 10MB)
+MAX_CHUNK_SIZE="8388608"        # 8MB max chunk size (default: 8MB)
+S3_PART_SIZE="5242880"          # 5MB S3 multipart upload part size (default: 5MB)
+S3_QUEUE_SIZE="4"               # Number of concurrent S3 upload parts (default: 4)
 ```
 
 #### OSC Integration (Recommended)
@@ -232,10 +238,11 @@ When OSC integration is enabled, the system automatically:
 
 ### File Upload Process
 
-1. **Upload Interface**: Drag-and-drop or click to select video files
-2. **Progress Tracking**: Real-time upload progress with visual indicators
-3. **Large File Support**: Handles files up to 100GB with streaming upload
-4. **Format Support**: MP4, MOV, AVI, MKV, and other common video formats
+1. **Smart Upload Strategy**: Files larger than 8MB use chunked upload (5MB chunks)
+2. **Deployment-Friendly**: Small chunks bypass reverse proxy body size limits  
+3. **Automatic Retry Logic**: Failed chunks are retried up to 3 times with backoff
+4. **Progress Tracking**: Real-time progress with chunk-level indicators
+5. **Format Support**: MP4, MOV, AVI, MKV, and other common video formats
 
 ### Automated Transcoding
 
