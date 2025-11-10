@@ -2,8 +2,6 @@
 
 A web-based interface for scheduling and managing video content for [Eyevinn Channel Engine](https://app.osaas.io/browse/channel-engine) instances. This application provides a professional broadcast-style rundown interface for creating and managing linear TV channel schedules.
 
-![Channel Scheduler Demo](screenrecording.gif)
-
 ![Channel Scheduler Interface](screenshot.png)
 
 ## Features
@@ -23,6 +21,8 @@ A web-based interface for scheduling and managing video content for [Eyevinn Cha
 ## Quick Start with Eyevinn Open Source Cloud
 
 The fastest way to get started is through **Eyevinn Open Source Cloud**, which provides instant deployment with zero setup required.
+
+![Channel Scheduler Demo](screenrecording.gif)
 
 **🚀 Deploy in One Click:**
 
