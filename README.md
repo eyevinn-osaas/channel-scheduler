@@ -2,6 +2,8 @@
 
 A web-based interface for scheduling and managing video content for [Eyevinn Channel Engine](https://app.osaas.io/browse/channel-engine) instances. This application provides a professional broadcast-style rundown interface for creating and managing linear TV channel schedules.
 
+![Channel Scheduler Demo](screenrecording.gif)
+
 ![Channel Scheduler Interface](screenshot.png)
 
 ## Features
