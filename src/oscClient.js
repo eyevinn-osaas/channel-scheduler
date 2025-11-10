@@ -479,7 +479,7 @@ class OSCClient {
                 status = 'processing';
             } else if (jobDetails.status === 'Complete' || jobDetails.status === 'SuccessCriteriaMet') {
                 status = 'completed';
-            } else if (jobDetails.status === 'Failed' || jobDetails.status === 'Error') {
+            } else if (jobDetails.status === 'Failed' || jobDetails.status === 'Error' || jobDetails.status === 'FailureTarget') {
                 status = 'failed';
             } else if (jobDetails.status === 'Suspended') {
                 status = 'suspended';
