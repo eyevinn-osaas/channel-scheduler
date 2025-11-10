@@ -369,7 +369,7 @@ class OSCClient {
         try {
             console.log(`Creating transcoding job: ${jobName}`);
 
-            // FFmpeg command to transcode to demuxed HLS (separate audio/video streams)
+            // FFmpeg command to transcode to truly demuxed HLS (separate audio/video streams)
             const cmdLineArgs = [
                 `-i s3://input/${inputS3Path}`,
                 
@@ -378,16 +378,16 @@ class OSCClient {
                 '-c:v libx264',
                 '-preset medium', 
                 '-crf 23',
-                '-g 72', // GOP size for 6-second segments at 12fps
+                '-g 72',
                 '-keyint_min 72',
-                '-sc_threshold 0', // Disable scene change detection
+                '-sc_threshold 0',
                 
-                // Audio stream settings  
+                // Audio stream settings
                 '-map 0:a:0',
                 '-c:a aac',
                 '-ar 48000',
                 '-b:a 128k',
-                '-ac 2', // Stereo audio
+                '-ac 2',
                 
                 // HLS output settings
                 '-f hls',
@@ -395,8 +395,8 @@ class OSCClient {
                 '-hls_list_size 0',
                 '-hls_flags independent_segments',
                 
-                // Demux streams - separate audio and video
-                '-var_stream_map "v:0,a:0"',
+                // Create separate video and audio variant streams with proper grouping
+                '-var_stream_map "v:0,agroup:audio,name:video a:0,agroup:audio,name:audio"',
                 '-master_pl_name master.m3u8',
                 `-hls_segment_filename s3://output/${outputS3Path}/stream_%v/segment_%03d.ts`,
                 `s3://output/${outputS3Path}/stream_%v/playlist.m3u8`
