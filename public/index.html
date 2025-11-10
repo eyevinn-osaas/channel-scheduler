@@ -166,8 +166,8 @@
 
     <!-- Channel Modal -->
     <div id="channel-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+        <div class="flex items-start justify-center min-h-screen py-4 px-4 overflow-y-auto">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md my-auto" style="max-height: calc(100vh - 2rem); overflow-y: auto;">
                 <h3 id="channel-modal-title" class="text-lg font-bold mb-4">Add Channel</h3>
                 <form id="channel-form">
                     <div class="mb-4">
@@ -205,10 +205,13 @@
 
     <!-- VOD Modal -->
     <div id="vod-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4 max-h-90vh overflow-y-auto">
-                <h3 id="vod-modal-title" class="text-lg font-bold mb-4">Add VOD</h3>
-                <form id="vod-form">
+        <div class="flex items-start justify-center min-h-screen py-4 px-4 overflow-y-auto">
+            <div class="bg-white rounded-lg w-full max-w-md my-auto flex flex-col" style="max-height: calc(100vh - 2rem);">
+                <div class="px-6 pt-6 pb-4 border-b border-gray-200">
+                    <h3 id="vod-modal-title" class="text-lg font-bold">Add VOD</h3>
+                </div>
+                <form id="vod-form" class="flex flex-col min-h-0">
+                    <div class="px-6 py-4 overflow-y-auto flex-1">
                     <div class="mb-4">
                         <label class="block text-sm font-medium mb-2">Title</label>
                         <input type="text" id="vod-title" class="w-full border rounded-lg px-3 py-2" required>
@@ -267,13 +270,16 @@
                         <label class="block text-sm font-medium mb-2">Preroll Duration (ms)</label>
                         <input type="number" id="vod-preroll-duration" class="w-full border rounded-lg px-3 py-2">
                     </div>
-                    <div class="flex justify-end space-x-2">
-                        <button type="button" id="cancel-vod" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
-                            Cancel
-                        </button>
-                        <button type="submit" id="vod-save-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                            Save
-                        </button>
+                    </div>
+                    <div class="px-6 pt-4 pb-6 border-t border-gray-200 bg-gray-50">
+                        <div class="flex justify-end space-x-2">
+                            <button type="button" id="cancel-vod" class="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-100">
+                                Cancel
+                            </button>
+                            <button type="submit" id="vod-save-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -282,8 +288,8 @@
 
     <!-- Schedule Modal -->
     <div id="schedule-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+        <div class="flex items-start justify-center min-h-screen py-4 px-4 overflow-y-auto">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md my-auto" style="max-height: calc(100vh - 2rem); overflow-y: auto;">
                 <h3 id="schedule-modal-title" class="text-lg font-bold mb-4">Add to Schedule</h3>
                 <form id="schedule-form">
                     <div class="mb-4">
@@ -324,8 +330,8 @@
 
     <!-- Set Start Time Modal -->
     <div id="set-start-time-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="bg-white p-6 rounded-lg w-full max-w-md mx-4">
+        <div class="flex items-start justify-center min-h-screen py-4 px-4 overflow-y-auto">
+            <div class="bg-white p-6 rounded-lg w-full max-w-md my-auto" style="max-height: calc(100vh - 2rem); overflow-y: auto;">
                 <h3 class="text-lg font-bold mb-4">Set Schedule Start Time</h3>
                 <form id="set-start-time-form">
                     <div class="mb-4">

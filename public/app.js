@@ -82,6 +82,7 @@ class ChannelScheduler {
 
         // File upload events
         document.getElementById('upload-area').addEventListener('click', () => {
+            // Only trigger file input, reset will happen in handleFileUpload if file is selected
             document.getElementById('file-upload').click();
         });
         document.getElementById('file-upload').addEventListener('change', (e) => this.handleFileUpload(e));
@@ -1148,23 +1149,42 @@ class ChannelScheduler {
 
     resetUploadUI() {
         // Reset file input
-        document.getElementById('file-upload').value = '';
+        const fileUpload = document.getElementById('file-upload');
+        if (fileUpload) fileUpload.value = '';
         
         // Clear current transcoding job
         this.currentTranscodingJob = null;
         
         // Show upload area, hide progress and success
-        document.getElementById('upload-area').classList.remove('hidden');
-        document.getElementById('upload-progress').classList.add('hidden');
-        document.getElementById('upload-success').classList.add('hidden');
+        const uploadArea = document.getElementById('upload-area');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadSuccess = document.getElementById('upload-success');
+        
+        if (uploadArea) uploadArea.classList.remove('hidden');
+        if (uploadProgress) uploadProgress.classList.add('hidden');
+        if (uploadSuccess) uploadSuccess.classList.add('hidden');
+        
+        // Reset progress bar and status
+        const progressBar = document.getElementById('upload-progress-bar');
+        const uploadStatus = document.getElementById('upload-status');
+        
+        if (progressBar) progressBar.style.width = '0%';
+        if (uploadStatus) uploadStatus.textContent = 'Preparing upload...';
         
         // Reset upload area content
-        const uploadArea = document.getElementById('upload-area');
-        uploadArea.innerHTML = `
-            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-            <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
-            <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
-        `;
+        if (uploadArea) {
+            uploadArea.innerHTML = `
+                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+                <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+            `;
+        }
+        
+        // Clear uploaded filename display
+        const uploadedFilenameEl = document.getElementById('uploaded-filename');
+        if (uploadedFilenameEl) {
+            uploadedFilenameEl.textContent = '';
+        }
         
         // Re-enable save button
         this.enableVODSaveButton();
@@ -1208,10 +1228,24 @@ class ChannelScheduler {
         const file = e.target.files[0];
         if (!file) return;
 
+        // Reset any previous upload states first
+        this.currentTranscodingJob = null;
+        
         // Show upload progress and disable save button
-        document.getElementById('upload-area').classList.add('hidden');
-        document.getElementById('upload-progress').classList.remove('hidden');
-        document.getElementById('upload-success').classList.add('hidden');
+        const uploadArea = document.getElementById('upload-area');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadSuccess = document.getElementById('upload-success');
+        const progressBar = document.getElementById('upload-progress-bar');
+        const uploadStatus = document.getElementById('upload-status');
+        
+        if (uploadArea) uploadArea.classList.add('hidden');
+        if (uploadProgress) uploadProgress.classList.remove('hidden');
+        if (uploadSuccess) uploadSuccess.classList.add('hidden');
+        
+        // Reset progress bar state
+        if (progressBar) progressBar.style.width = '0%';
+        if (uploadStatus) uploadStatus.textContent = 'Preparing upload...';
+        
         this.disableVODSaveButton();
 
         try {
@@ -1222,9 +1256,17 @@ class ChannelScheduler {
                 : await this.uploadFileDirect(file);
 
             // Show success state
-            document.getElementById('upload-progress').classList.add('hidden');
-            document.getElementById('upload-success').classList.remove('hidden');
-            document.getElementById('uploaded-filename').textContent = result.originalName;
+            const uploadProgress = document.getElementById('upload-progress');
+            const uploadSuccess = document.getElementById('upload-success');
+            
+            if (uploadProgress) uploadProgress.classList.add('hidden');
+            if (uploadSuccess) uploadSuccess.classList.remove('hidden');
+            
+            // Safely set uploaded filename if element exists
+            const uploadedFilenameEl = document.getElementById('uploaded-filename');
+            if (uploadedFilenameEl) {
+                uploadedFilenameEl.textContent = result.originalName;
+            }
 
             // Auto-populate title if empty
             const titleField = document.getElementById('vod-title');
@@ -1251,26 +1293,32 @@ class ChannelScheduler {
             console.error('Upload failed:', error);
             
             // Show error state and re-enable save button
-            document.getElementById('upload-progress').classList.add('hidden');
-            document.getElementById('upload-area').classList.remove('hidden');
+            const uploadProgress = document.getElementById('upload-progress');
+            const uploadArea = document.getElementById('upload-area');
+            
+            if (uploadProgress) uploadProgress.classList.add('hidden');
+            if (uploadArea) uploadArea.classList.remove('hidden');
             this.enableVODSaveButton();
             
             // Show error message
-            const uploadArea = document.getElementById('upload-area');
-            uploadArea.innerHTML = `
-                <i class="fas fa-exclamation-triangle text-3xl text-red-400 mb-2"></i>
-                <p class="text-sm text-red-600">Upload failed: ${error.message}</p>
-                <p class="text-xs text-gray-400 mt-1">Click to try again</p>
-            `;
-            
-            // Reset after 3 seconds
-            setTimeout(() => {
+            if (uploadArea) {
                 uploadArea.innerHTML = `
-                    <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-                    <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
-                    <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-400 mb-2"></i>
+                    <p class="text-sm text-red-600">Upload failed: ${error.message}</p>
+                    <p class="text-xs text-gray-400 mt-1">Click to try again</p>
                 `;
-            }, 3000);
+                
+                // Reset after 3 seconds
+                setTimeout(() => {
+                    if (uploadArea) {
+                        uploadArea.innerHTML = `
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                            <p class="text-sm text-gray-600">Click to upload or drag and drop</p>
+                            <p class="text-xs text-gray-400 mt-1">Supports video files, HLS playlists</p>
+                        `;
+                    }
+                }, 3000);
+            }
         }
     }
 
@@ -1284,8 +1332,11 @@ class ChannelScheduler {
                 xhr.upload.addEventListener('progress', (e) => {
                     if (e.lengthComputable) {
                         const percentComplete = Math.round((e.loaded / e.total) * 100);
-                        document.getElementById('upload-progress-bar').style.width = percentComplete + '%';
-                        document.getElementById('upload-status').textContent = `Uploading... ${percentComplete}%`;
+                        const progressBar = document.getElementById('upload-progress-bar');
+                        const uploadStatus = document.getElementById('upload-status');
+                        
+                        if (progressBar) progressBar.style.width = percentComplete + '%';
+                        if (uploadStatus) uploadStatus.textContent = `Uploading... ${percentComplete}%`;
                     }
                 });
 
@@ -1386,8 +1437,11 @@ class ChannelScheduler {
                     
                     // Update progress
                     const overallProgress = Math.round((uploadedChunks / totalChunks) * 100);
-                    document.getElementById('upload-progress-bar').style.width = overallProgress + '%';
-                    document.getElementById('upload-status').textContent = `Uploading... ${overallProgress}% (${uploadedChunks}/${totalChunks} chunks)`;
+                    const progressBar = document.getElementById('upload-progress-bar');
+                    const uploadStatus = document.getElementById('upload-status');
+                    
+                    if (progressBar) progressBar.style.width = overallProgress + '%';
+                    if (uploadStatus) uploadStatus.textContent = `Uploading... ${overallProgress}% (${uploadedChunks}/${totalChunks} chunks)`;
                     
                     // If this was the final chunk, return the complete result
                     if (result.isComplete) {

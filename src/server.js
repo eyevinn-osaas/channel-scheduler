@@ -20,6 +20,26 @@ const { calculateBackToBackSchedule, rebalanceSchedule, updateChannelScheduleSta
 const { seedDatabase } = require('./seedData');
 const { OSCClient } = require('./oscClient');
 
+// Utility function to sanitize filenames for upload
+function sanitizeFilename(filename) {
+  if (!filename) return filename;
+  
+  // Get file extension
+  const lastDotIndex = filename.lastIndexOf('.');
+  const name = lastDotIndex !== -1 ? filename.substring(0, lastDotIndex) : filename;
+  const extension = lastDotIndex !== -1 ? filename.substring(lastDotIndex) : '';
+  
+  // Replace problematic characters with safe alternatives
+  const sanitizedName = name
+    .replace(/\s+/g, '_')           // Replace spaces with underscores
+    .replace(/[^\w\-_.]/g, '')      // Remove special characters, keep word chars, hyphens, underscores, dots
+    .replace(/_{2,}/g, '_')         // Replace multiple underscores with single
+    .replace(/^_+|_+$/g, '')       // Remove leading/trailing underscores
+    .toLowerCase();                 // Convert to lowercase for consistency
+  
+  return sanitizedName + extension;
+}
+
 const prisma = new PrismaClient();
 const oscClient = new OSCClient();
 
@@ -400,7 +420,8 @@ fastify.post('/api/upload-init', async (request, reply) => {
     // Create unique filename for this upload
     const timestamp = Date.now();
     const uploadId = `${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
-    const finalFilename = `${timestamp}-${filename}`;
+    const sanitizedFilename = sanitizeFilename(filename);
+    const finalFilename = `${timestamp}-${sanitizedFilename}`;
 
     // Initialize multipart upload in S3
     const multipartParams = {
@@ -613,7 +634,8 @@ fastify.post('/api/upload-file', async (request, reply) => {
     // Generate unique filename
     const timestamp = Date.now();
     const originalName = data.filename || 'uploaded-file';
-    const filename = `${timestamp}-${originalName}`;
+    const sanitizedFilename = sanitizeFilename(originalName);
+    const filename = `${timestamp}-${sanitizedFilename}`;
 
     // Use managed upload with smaller parts for deployment environments
     const uploadParams = {
